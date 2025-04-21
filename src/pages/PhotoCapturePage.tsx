@@ -38,15 +38,41 @@ const PhotoCapturePage = () => {
       const cameraTimeout = setTimeout(() => {
         if (!isCameraReady) {
           console.warn('Camera initialization timeout - not ready after 10 seconds');
+          
+          // Clear any existing streams to ensure fresh start
+          if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
+            const stream = webcamRef.current.video.srcObject as MediaStream;
+            stream.getTracks().forEach(track => {
+              console.log('Stopping track due to timeout:', track.label);
+              track.stop();
+            });
+          }
+          
           // Try to reset by toggling camera mode
           if (isMobile) {
             toggleCameraFacing();
+          } else {
+            // For desktop, try a complete reset
+            setMode(null);
+            setTimeout(() => setMode('capture'), 500);
           }
+          
           setError('Camera initialization is taking too long. Try switching cameras or refreshing the page.');
         }
       }, 10000);
       
-      return () => clearTimeout(cameraTimeout);
+      return () => {
+        clearTimeout(cameraTimeout);
+        
+        // Clean up any active camera stream when component unmounts or mode changes
+        if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
+          const stream = webcamRef.current.video.srcObject as MediaStream;
+          stream.getTracks().forEach(track => {
+            console.log('Stopping camera track on cleanup:', track.label);
+            track.stop();
+          });
+        }
+      };
     }
   }, [mode, facingMode, isCameraReady, isMobile]);
 
@@ -286,9 +312,20 @@ const PhotoCapturePage = () => {
     } else {
       // Try to access the camera again to ensure permissions are still valid
       setIsCheckingCamera(true);
+      setError(null); // Clear any previous errors
       console.log('Attempting to initialize camera with facing mode:', facingMode);
       
+      // Stop any existing streams first
+      if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
+        const existingStream = webcamRef.current.video.srcObject as MediaStream;
+        existingStream.getTracks().forEach(track => {
+          console.log('Stopping existing track:', track.label);
+          track.stop();
+        });
+      }
+      
       // Explicitly request camera permissions with more detailed constraints
+      // but with flexible values to work on more devices
       const constraints = { 
         video: {
           facingMode: facingMode,
@@ -303,11 +340,15 @@ const PhotoCapturePage = () => {
           console.log('Camera permission granted:', stream.getVideoTracks().map(t => t.label));
           // Release the stream to avoid conflicts with Webcam component
           stream.getTracks().forEach(track => track.stop());
-          setMode('capture');
-          setIsCheckingCamera(false);
+          // Set a brief timeout before activating the webcam component
+          setTimeout(() => {
+            setMode('capture');
+            setIsCheckingCamera(false);
+          }, 200);
         })
         .catch((err) => {
           console.error('Detailed camera access error:', err.name, err.message);
+          
           // Try again with simpler constraints
           console.log('Trying with simplified constraints');
           navigator.mediaDevices.getUserMedia({ video: true })
@@ -315,8 +356,11 @@ const PhotoCapturePage = () => {
               console.log('Camera access successful with basic constraints');
               // Release the stream to avoid conflicts with Webcam component
               stream.getTracks().forEach(track => track.stop());
-              setMode('capture');
-              setIsCheckingCamera(false);
+              // Set a brief timeout before activating the webcam component
+              setTimeout(() => {
+                setMode('capture');
+                setIsCheckingCamera(false);
+              }, 200);
             })
             .catch((fallbackErr) => {
               console.error('Fallback camera access error:', fallbackErr.name, fallbackErr.message);
@@ -385,30 +429,33 @@ const PhotoCapturePage = () => {
 
   // Function to toggle between front and back cameras
   const toggleCameraFacing = () => {
+    // Properly clean up existing stream first
+    if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
+      const stream = webcamRef.current.video.srcObject as MediaStream;
+      stream.getTracks().forEach(track => {
+        console.log('Stopping track before toggling camera:', track.label);
+        track.stop();
+      });
+    }
+    
     setIsCameraReady(false); // Reset camera ready status
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
     
-    // Force webcam to reconnect with new facing mode
-    if (webcamRef.current) {
-      // Small delay to ensure state updates before reconnecting
-      setTimeout(() => {
-        if (webcamRef.current) {
-          // Attempt to reset the connection
-          const video = webcamRef.current.video;
-          if (video && video.srcObject) {
-            const stream = video.srcObject as MediaStream;
-            stream.getTracks().forEach(track => track.stop());
-          }
-        }
-      }, 300);
-    }
+    // Temporarily set mode to null to force a complete re-mount of the Webcam component
+    setMode(null);
+    
+    // Small delay to ensure state updates before reconnecting
+    setTimeout(() => {
+      setMode('capture');
+    }, 500);
   };
 
   // Function to handle webcam ready state
   const handleUserMedia = (stream: MediaStream) => {
     console.log('Camera stream connected successfully:', stream.getVideoTracks().map(track => ({
       label: track.label,
-      settings: track.getSettings()
+      settings: track.getSettings(),
+      capabilities: track.getCapabilities ? track.getCapabilities() : 'Not supported'
     })));
     setIsCameraReady(true);
     setError(null);
@@ -417,8 +464,19 @@ const PhotoCapturePage = () => {
   // Function to handle webcam errors
   const handleWebcamError = (error: string | DOMException) => {
     console.error('Webcam component error:', error);
-    setError('Camera could not be initialized. You may need to grant camera permissions or try a different browser.');
+    const errorMessage = error instanceof DOMException 
+      ? `Camera error: ${error.name} - ${error.message}` 
+      : 'Camera could not be initialized. You may need to grant camera permissions or try a different browser.';
+    
+    setError(errorMessage);
     setIsCameraReady(false);
+    
+    // After 3 seconds, offer a reset button if still not working
+    setTimeout(() => {
+      if (!isCameraReady && mode === 'capture') {
+        setError(prev => prev + ' Try refreshing the page or switching to file upload.');
+      }
+    }, 3000);
   };
 
   return (
@@ -528,8 +586,9 @@ const PhotoCapturePage = () => {
                     screenshotFormat="image/jpeg"
                     videoConstraints={{ 
                       facingMode: facingMode,
-                      width: { ideal: 1280 },
-                      height: { ideal: 1920 }
+                      // Less restrictive constraints to work on more devices
+                      width: { min: 640, ideal: 1280 },
+                      height: { min: 480, ideal: 1920 }
                     }}
                     className="w-full h-full rounded-lg object-cover"
                     onUserMedia={handleUserMedia}
