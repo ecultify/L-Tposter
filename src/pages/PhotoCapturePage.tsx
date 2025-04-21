@@ -476,6 +476,7 @@ const PhotoCapturePage = () => {
 
     setIsProcessing(true);
     setError(null);
+    console.log('Starting image processing...');
     
     try {
       // First, ensure the image is fully loaded
@@ -486,52 +487,73 @@ const PhotoCapturePage = () => {
         img.src = image;
       });
       
+      console.log('Image loaded successfully');
+      
       // Convert image URL directly to blob
       const response = await fetch(image);
       const blob = await response.blob();
 
       // Show processing status to user
       setError('Processing your image. This may take a moment...');
+      console.log('Image converted to blob, size:', blob.size);
 
       // If this is a selfie (front camera) and we should use AI generation
       if (captureMode === 'selfie') {
         try {
           // Step 1: Set the AI generation flag to show the loading UI
           setIsGeneratingAIImage(true);
+          console.log('Starting selfie processing with AI...');
           
           // Step 2: First remove the background from the selfie
           setError('Removing background from selfie...');
+          console.log('Starting background removal...');
           const backgroundRemovedResponse = await removeBackground(blob);
           
           if (!backgroundRemovedResponse.success) {
             throw new Error(backgroundRemovedResponse.error || 'Failed to remove background from selfie');
           }
           
+          console.log('Background removal successful');
+          
           // Get the background-removed image URL
           const bgRemovedImageUrl = backgroundRemovedResponse.data as string;
           
-          // For testing/debugging only - store the bg-removed image temporarily
+          // Temporarily store the background-removed image
           setAiGeneratedImage(bgRemovedImageUrl);
+          console.log('Background-removed image stored temporarily');
           
           // Step 3: Now create a professional body shot using OpenAI
           setError('Creating professional body shot...');
+          console.log('Starting AI portrait generation...');
           const bodyShot = await createProfessionalBodyShot(bgRemovedImageUrl);
           
-          if (!bodyShot.success) {
-            console.error('Failed to create professional body shot:', bodyShot.error);
-            // If body shot generation fails, still use the background-removed image
-            setProcessedImage({
-              original: image,
-              processed: bgRemovedImageUrl
-            });
+          let finalImageUrl = bgRemovedImageUrl; // Default to background-removed image
+          
+          if (bodyShot.success) {
+            // If AI portrait generation succeeds, use that
+            finalImageUrl = bodyShot.data as string;
+            setAiGeneratedImage(finalImageUrl);
+            console.log('AI portrait generation successful');
           } else {
-            // Save both original selfie and processed body shot
-            setAiGeneratedImage(bodyShot.data as string);
+            console.error('Failed to create professional body shot:', bodyShot.error);
+            console.log('Using background-removed image as fallback');
+            // If AI generation fails, we'll still use the background-removed image
+          }
+          
+          // Important: Wait for this to complete before navigation
+          await new Promise<void>(resolve => {
+            // Save the processed image to context
+            console.log('Saving final image to context:', finalImageUrl.substring(0, 50) + '...');
             setProcessedImage({
               original: image,
-              processed: bodyShot.data as string
+              processed: finalImageUrl
             });
-          }
+            
+            // Give React time to update the context before navigating
+            setTimeout(resolve, 500);
+          });
+          
+          console.log('Context updated with final image');
         } finally {
           // Make sure to reset the AI generation flag
           setIsGeneratingAIImage(false);
@@ -539,23 +561,36 @@ const PhotoCapturePage = () => {
       } else {
         // Regular photo processing (back camera or uploaded image)
         // Call remove.bg API through our service
+        console.log('Starting background removal for regular photo...');
         const bgRemovalResponse = await removeBackground(blob);
 
         if (!bgRemovalResponse.success) {
           throw new Error(bgRemovalResponse.error || 'Failed to process image');
         }
 
-        // Save both original and processed images to context
-        setProcessedImage({
-          original: image,
-          processed: bgRemovalResponse.data as string
+        console.log('Background removal successful');
+        
+        // Wait for the context to be updated with the processed image
+        await new Promise<void>(resolve => {
+          // Save both original and processed images to context
+          console.log('Saving processed image to context');
+          setProcessedImage({
+            original: image,
+            processed: bgRemovalResponse.data as string
+          });
+          
+          // Give React time to update the context before navigating
+          setTimeout(resolve, 500);
         });
+        
+        console.log('Context updated with processed image');
       }
       
       // Clear processing message
       setError(null);
       
       // Navigate to the poster generator page
+      console.log('Navigation to poster generator page');
       navigate('/generate');
     } catch (error) {
       console.error('Error processing image:', error);

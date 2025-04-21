@@ -578,31 +578,31 @@ export const createProfessionalBodyShot = async (
 ): Promise<ApiResponse<string>> => {
   try {
     console.log('Creating professional body shot from background-removed selfie...');
-    
-    // Convert the background-removed image URL to a base64 string
-    const response = await fetch(bgRemovedImageUrl);
-    const bgRemovedBlob = await response.blob();
-    
-    // Convert blob to base64
-    const base64Image = await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        // Extract the base64 part after the data URL prefix
-        const base64 = base64String.split(',')[1];
-        resolve(base64);
-      };
-      reader.readAsDataURL(bgRemovedBlob);
-    });
+    console.log('OpenAI API Key available?', !!API_CONFIG.openaiApiKey);
     
     // Create a detailed prompt for DALL-E 3
-    const prompt = "Create a professional full-body business portrait based on this selfie. " +
-                  "The person should be wearing formal business attire (suit/tie for men, blazer for women), " +
-                  "standing with good posture against a plain white or gradient background. " +
-                  "Frame the image to show from head to waist. " +
-                  "Maintain exact facial features, skin tone, and expression from the input image. " +
-                  "Ensure the result is a photorealistic, high-quality professional portrait suitable for a business poster. " +
-                  "Only show ONE person in professional attire, not multiple variations.";
+    // Since we can't directly use the image as input, we'll describe what we want
+    const prompt = `Create a professional business portrait showing a person in formal business attire 
+                    from waist up against a plain white background. The person should have a confident posture,
+                    looking directly at the camera with a slight smile. They should be wearing a well-fitted suit 
+                    or blazer. The image should be high quality, well-lit with professional studio lighting, 
+                    and suitable for a corporate/business poster. Use a clean, minimal aesthetic with the subject
+                    centered in the frame. The portrait should look like a real photograph, not illustrated or cartoonish.`;
+    
+    console.log('Using prompt for DALL-E 3:', prompt);
+    
+    // Prepare request payload
+    const requestPayload = {
+      model: "dall-e-3",
+      prompt: prompt,
+      n: 1,
+      size: "1024x1024",
+      quality: "hd",
+      style: "natural",
+      response_format: "url"
+    };
+    
+    console.log('Sending request to OpenAI API with payload:', JSON.stringify(requestPayload));
     
     // Call OpenAI API with the latest DALL-E 3 model
     const openaiResponse = await fetch('https://api.openai.com/v1/images/generations', {
@@ -611,43 +611,49 @@ export const createProfessionalBodyShot = async (
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${API_CONFIG.openaiApiKey}`
       },
-      body: JSON.stringify({
-        model: "dall-e-3",
-        prompt: prompt,
-        n: 1,
-        size: "1024x1024",
-        quality: "hd",
-        style: "natural",
-        response_format: "url"
-      })
+      body: JSON.stringify(requestPayload)
     });
+    
+    console.log('OpenAI API response status:', openaiResponse.status);
     
     if (!openaiResponse.ok) {
       const errorData = await openaiResponse.json();
-      console.error("OpenAI API error details:", errorData);
+      console.error("OpenAI API error details:", JSON.stringify(errorData));
       throw new Error(`OpenAI API error: ${errorData.error?.message || openaiResponse.statusText}`);
     }
     
     const data = await openaiResponse.json();
-    console.log('OpenAI image generation response:', data);
+    console.log('OpenAI image generation successful, response data available');
     
     if (data.data && data.data.length > 0 && data.data[0].url) {
-      // Download the image
+      console.log('Generated image URL received from OpenAI');
+      
+      // Download the generated image
       const imageResponse = await fetch(data.data[0].url);
+      console.log('Image download response status:', imageResponse.status);
+      
       const blob = await imageResponse.blob();
+      console.log('Image downloaded, size:', blob.size);
+      
       const processedImageUrl = URL.createObjectURL(blob);
+      console.log('Created object URL for the generated image');
       
       return {
         success: true,
         data: processedImageUrl
       };
     } else {
+      console.error('Invalid or unexpected response format from OpenAI:', JSON.stringify(data));
       throw new Error('Invalid response from OpenAI');
     }
   } catch (error) {
     console.error('Error creating professional body shot:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
     
-    // Return error with the background-removed image as fallback
+    // Return error with the original background-removed image as fallback
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create professional body shot'
