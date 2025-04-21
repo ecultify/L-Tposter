@@ -36,7 +36,6 @@ const CompanyInfoPage = () => {
   const [availableKeywords, setAvailableKeywords] = useState<string[]>([]);
   const [isGeneratingTagline, setIsGeneratingTagline] = useState(false);
   const [generatedTagline, setGeneratedTagline] = useState('');
-  const [hasGeneratedTagline, setHasGeneratedTagline] = useState(false);
   
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<CompanyFormData>({
     defaultValues: {
@@ -50,14 +49,12 @@ const CompanyInfoPage = () => {
   });
 
   const businessType = watch('businessType');
-  const tagline = watch('tagline');
 
   // Set keywords based on selected business type
   useEffect(() => {
     if (businessType && industryKeywords[businessType as keyof typeof industryKeywords]) {
       setAvailableKeywords(industryKeywords[businessType as keyof typeof industryKeywords]);
       setSelectedKeywords([]);
-      setHasGeneratedTagline(false);
     }
   }, [businessType]);
 
@@ -87,14 +84,7 @@ const CompanyInfoPage = () => {
 
   const toggleKeyword = (keyword: string) => {
     if (selectedKeywords.includes(keyword)) {
-      const newKeywords = selectedKeywords.filter(k => k !== keyword);
-      setSelectedKeywords(newKeywords);
-      
-      // If no keywords are selected, clear the tagline
-      if (newKeywords.length === 0) {
-        setHasGeneratedTagline(false);
-        setValue('tagline', '');
-      }
+      setSelectedKeywords(selectedKeywords.filter(k => k !== keyword));
     } else {
       if (selectedKeywords.length < 3) {
         setSelectedKeywords([...selectedKeywords, keyword]);
@@ -137,7 +127,6 @@ const CompanyInfoPage = () => {
       console.log('Generated tagline:', tagline);
       
       setGeneratedTagline(tagline);
-      setHasGeneratedTagline(true); // Mark that we've generated a tagline
       
       /* 
       // Actual OpenAI implementation would look something like this:
@@ -171,7 +160,6 @@ const CompanyInfoPage = () => {
         if (data.choices && data.choices.length > 0 && data.choices[0].message) {
           const tagline = data.choices[0].message.content.trim();
           setGeneratedTagline(tagline);
-          setHasGeneratedTagline(true); // Mark that we've generated a tagline
         } else {
           throw new Error('Invalid response from OpenAI');
         }
@@ -319,17 +307,9 @@ const CompanyInfoPage = () => {
                 <input
                   type="text"
                   {...register('tagline', { required: 'Tagline is required' })}
-                  className="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="AI-generated tagline will appear here"
-                  readOnly={true}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Your company's slogan or motto"
                 />
-                {hasGeneratedTagline && selectedKeywords.length > 0 && (
-                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                )}
                 {selectedKeywords.length > 0 && (
                   <div className="mt-2">
                     {isGeneratingTagline ? (
@@ -341,28 +321,21 @@ const CompanyInfoPage = () => {
                         </div>
                       </div>
                     ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={generateTagline}
-                          disabled={selectedKeywords.length === 0}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-400"
-                        >
-                          <Sparkles className="-ml-1 mr-2 h-4 w-4" />
-                          Generate with AI
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={generateTagline}
+                        disabled={selectedKeywords.length === 0}
+                        className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-400"
+                      >
+                        <Sparkles className="-ml-1 mr-2 h-4 w-4" />
+                        Generate with AI
+                      </button>
                     )}
-                    {!isGeneratingTagline && !hasGeneratedTagline && (
+                    {!isGeneratingTagline && (
                       <p className="mt-1 text-xs text-gray-500">
-                        Select keywords above and click Generate to create your tagline
+                        Generate a tagline (8-10 words) using AI based on your selected keywords
                       </p>
                     )}
-                  </div>
-                )}
-                {(!selectedKeywords.length || selectedKeywords.length === 0) && (
-                  <div className="mt-1 text-xs text-blue-600">
-                    Select industry keywords above to generate your tagline with AI
                   </div>
                 )}
               </div>

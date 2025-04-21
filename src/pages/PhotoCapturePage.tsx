@@ -17,8 +17,79 @@ const PhotoCapturePage = () => {
   const [isCheckingCamera, setIsCheckingCamera] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imageQualityWarning, setImageQualityWarning] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isMobile, setIsMobile] = useState<boolean>(false);
-  const [isCameraReady, setIsCameraReady] = useState<boolean>(false);
+  const [showGuidelines, setShowGuidelines] = useState<boolean>(true);
+  const [isWellPositioned, setIsWellPositioned] = useState<boolean>(false);
+
+  // CSS for vertical camera layout
+  const cameraStyles = {
+    container: {
+      position: 'relative',
+      width: '100%',
+      maxWidth: '400px',
+      marginLeft: 'auto',
+      marginRight: 'auto',
+      overflow: 'hidden',
+    },
+    webcam: {
+      width: '100%',
+      height: 'auto',
+      aspectRatio: '2/3', // Portrait orientation (vertical)
+      objectFit: 'cover',
+      borderRadius: '8px',
+    },
+    guidelines: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'none',
+    },
+    positionOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      pointerEvents: 'none',
+    },
+    silhouette: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: '80%',
+      height: '70%',
+      borderRadius: '50% 50% 45% 45% / 60% 60% 40% 40%', // Head and shoulders shape
+      border: '2px dashed rgba(255, 255, 255, 0.7)',
+      pointerEvents: 'none',
+    },
+    statusIndicator: {
+      position: 'absolute',
+      bottom: '15px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      padding: '4px 12px',
+      borderRadius: '16px',
+      fontSize: '12px',
+      fontWeight: 'bold',
+      pointerEvents: 'none',
+    },
+    wellPositioned: {
+      backgroundColor: 'rgba(0, 200, 0, 0.7)',
+      color: 'white',
+    },
+    notPositioned: {
+      backgroundColor: 'rgba(200, 200, 200, 0.7)',
+      color: 'white',
+    }
+  };
 
   // Redirect if not verified
   useEffect(() => {
@@ -26,49 +97,6 @@ const PhotoCapturePage = () => {
       navigate('/');
     }
   }, [isVerified, userData.phoneNumber, navigate]);
-
-  // Reset camera ready state when camera mode changes and add timeout detection
-  useEffect(() => {
-    if (mode === 'capture') {
-      setIsCameraReady(false);
-      console.log('Camera mode activated, initializing front-facing webcam');
-      
-      // Add a timeout to detect if camera initialization is stuck
-      const cameraTimeout = setTimeout(() => {
-        if (!isCameraReady) {
-          console.warn('Camera initialization timeout - not ready after 10 seconds');
-          
-          // Clear any existing streams to ensure fresh start
-          if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
-            const stream = webcamRef.current.video.srcObject as MediaStream;
-            stream.getTracks().forEach(track => {
-              console.log('Stopping track due to timeout:', track.label);
-              track.stop();
-            });
-          }
-          
-          // For desktop, try a complete reset
-          setMode(null);
-          setTimeout(() => setMode('capture'), 500);
-          
-          setError('Camera initialization is taking too long. Try refreshing the page or switching to file upload.');
-        }
-      }, 10000);
-      
-      return () => {
-        clearTimeout(cameraTimeout);
-        
-        // Clean up any active camera stream when component unmounts or mode changes
-        if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
-          const stream = webcamRef.current.video.srcObject as MediaStream;
-          stream.getTracks().forEach(track => {
-            console.log('Stopping camera track on cleanup:', track.label);
-            track.stop();
-          });
-        }
-      };
-    }
-  }, [mode, isCameraReady]);
 
   // Check if device has a camera
   useEffect(() => {
@@ -136,6 +164,21 @@ const PhotoCapturePage = () => {
     checkMobile();
   }, []);
 
+  // Face detection to check if user is well positioned (simulated)
+  useEffect(() => {
+    if (mode === 'capture' && !image && webcamRef.current && webcamRef.current.video) {
+      // This is a simple timer to simulate face detection
+      // In a real application, you would use a face detection library
+      const timer = setInterval(() => {
+        // Randomly toggle positioning for demo purposes
+        // In a real app, use face detection to check if face is within the silhouette
+        setIsWellPositioned(Math.random() > 0.3);
+      }, 1000);
+      
+      return () => clearInterval(timer);
+    }
+  }, [mode, image]);
+
   const handleCapture = React.useCallback(() => {
     if (webcamRef.current) {
       const imageSrc = webcamRef.current.getScreenshot();
@@ -148,6 +191,39 @@ const PhotoCapturePage = () => {
       }
     }
   }, [webcamRef]);
+
+  // Toggle camera guidelines
+  const toggleGuidelines = () => {
+    setShowGuidelines(!showGuidelines);
+  };
+
+  // Function to toggle between front and back cameras
+  const toggleCameraFacing = async () => {
+    try {
+      // First, stop any existing streams to release the current camera
+      if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
+        const stream = webcamRef.current.video.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+      
+      // Set new facing mode
+      const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
+      setFacingMode(newFacingMode);
+      
+      // Explicitly request the new camera
+      await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: newFacingMode,
+          width: { ideal: 720 },
+          height: { ideal: 1080 }
+        },
+        audio: false
+      });
+    } catch (err) {
+      console.error('Error switching camera:', err);
+      setError('Failed to switch camera. Please try again.');
+    }
+  };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -306,57 +382,33 @@ const PhotoCapturePage = () => {
     } else {
       // Try to access the camera again to ensure permissions are still valid
       setIsCheckingCamera(true);
-      setError(null); // Clear any previous errors
-      console.log('Attempting to initialize front camera');
       
-      // Stop any existing streams first
-      if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
-        const existingStream = webcamRef.current.video.srcObject as MediaStream;
-        existingStream.getTracks().forEach(track => {
-          console.log('Stopping existing track:', track.label);
-          track.stop();
-        });
-      }
-      
-      // Explicitly request front camera permissions with flexible constraints
+      // Explicitly request camera permissions with more detailed constraints
+      // Use portrait orientation for mobile (height > width)
       const constraints = { 
         video: {
-          facingMode: "user",
-          width: { min: 640, ideal: 1280 },
-          height: { min: 480, ideal: 1920 }
+          facingMode: facingMode,
+          width: { ideal: 720 },
+          height: { ideal: 1080 }, // Make height larger than width for portrait
+          aspectRatio: { ideal: 0.6667 } // 2:3 aspect ratio for portrait
         }, 
         audio: false 
       };
       
       navigator.mediaDevices.getUserMedia(constraints)
-        .then((stream) => {
-          console.log('Camera permission granted:', stream.getVideoTracks().map(t => t.label));
-          // Release the stream to avoid conflicts with Webcam component
-          stream.getTracks().forEach(track => track.stop());
-          // Set a brief timeout before activating the webcam component
-          setTimeout(() => {
-            setMode('capture');
-            setIsCheckingCamera(false);
-          }, 200);
+        .then(() => {
+          setMode('capture');
+          setIsCheckingCamera(false);
         })
         .catch((err) => {
-          console.error('Camera access error:', err.name, err.message);
-          
+          console.error('Camera access error:', err);
           // Try again with simpler constraints
-          console.log('Trying with simplified constraints');
           navigator.mediaDevices.getUserMedia({ video: true })
-            .then((stream) => {
-              console.log('Camera access successful with basic constraints');
-              // Release the stream to avoid conflicts with Webcam component
-              stream.getTracks().forEach(track => track.stop());
-              // Set a brief timeout before activating the webcam component
-              setTimeout(() => {
-                setMode('capture');
-                setIsCheckingCamera(false);
-              }, 200);
+            .then(() => {
+              setMode('capture');
+              setIsCheckingCamera(false);
             })
-            .catch((fallbackErr) => {
-              console.error('Fallback camera access error:', fallbackErr.name, fallbackErr.message);
+            .catch(() => {
               setHasCamera(false);
               setMode('upload');
               if (fileInputRef.current) {
@@ -420,35 +472,6 @@ const PhotoCapturePage = () => {
     }
   };
 
-  // Function to handle webcam ready state
-  const handleUserMedia = (stream: MediaStream) => {
-    console.log('Camera stream connected successfully:', stream.getVideoTracks().map(track => ({
-      label: track.label,
-      settings: track.getSettings(),
-      capabilities: track.getCapabilities ? track.getCapabilities() : 'Not supported'
-    })));
-    setIsCameraReady(true);
-    setError(null);
-  };
-
-  // Function to handle webcam errors
-  const handleWebcamError = (error: string | DOMException) => {
-    console.error('Webcam component error:', error);
-    const errorMessage = error instanceof DOMException 
-      ? `Camera error: ${error.name} - ${error.message}` 
-      : 'Camera could not be initialized. You may need to grant camera permissions or try a different browser.';
-    
-    setError(errorMessage);
-    setIsCameraReady(false);
-    
-    // After 3 seconds, offer a reset button if still not working
-    setTimeout(() => {
-      if (!isCameraReady && mode === 'capture') {
-        setError(prev => prev + ' Try refreshing the page or switching to file upload.');
-      }
-    }, 3000);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
@@ -465,10 +488,10 @@ const PhotoCapturePage = () => {
           <div>
             <p className="font-medium">Photo Guidance</p>
             <ul className="text-sm list-disc list-inside mt-1">
-              <li>For best results, use a standing photo with a clear background</li>
-              <li>Face forward, similar to an ID photo</li>
+              <li>Position your face within the guide outline</li>
+              <li>Face the camera directly, similar to an ID photo</li>
+              <li>Ensure your shoulders are visible in the frame</li>
               <li>Ensure good lighting to help with background removal</li>
-              <li>Your image will be positioned next to Bumrah in the poster</li>
             </ul>
           </div>
         </div>
@@ -531,6 +554,7 @@ const PhotoCapturePage = () => {
                   src={image}
                   alt="Captured"
                   className="w-full rounded-lg"
+                  style={{ maxHeight: '70vh', objectFit: 'contain' }}
                 />
                 <button
                   onClick={() => setImage(null)}
@@ -540,85 +564,67 @@ const PhotoCapturePage = () => {
                 </button>
               </div>
             ) : (
-              <div className="relative">
-                <div className="aspect-[3/4] mx-auto relative max-w-md">
-                  {!isCameraReady && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-800 rounded-lg z-10">
-                      <div className="text-center">
-                        <Loader2 className="mx-auto h-8 w-8 text-blue-600 animate-spin" />
-                        <p className="mt-2 text-sm text-white">Starting camera...</p>
-                      </div>
+              <div style={cameraStyles.container as React.CSSProperties}>
+                <Webcam
+                  audio={false}
+                  ref={webcamRef}
+                  screenshotFormat="image/jpeg"
+                  videoConstraints={{ 
+                    facingMode: facingMode,
+                    width: { ideal: 720 },
+                    height: { ideal: 1080 },
+                    aspectRatio: { ideal: 0.6667 } // 2:3 aspect ratio for portrait
+                  }}
+                  style={cameraStyles.webcam as React.CSSProperties}
+                />
+                
+                {showGuidelines && (
+                  <div style={cameraStyles.positionOverlay as React.CSSProperties}>
+                    <div style={cameraStyles.silhouette as React.CSSProperties}></div>
+                    <div 
+                      style={{
+                        ...cameraStyles.statusIndicator as React.CSSProperties,
+                        ...(isWellPositioned 
+                          ? cameraStyles.wellPositioned 
+                          : cameraStyles.notPositioned) as React.CSSProperties
+                      }}
+                    >
+                      {isWellPositioned ? 'Well Positioned!' : 'Position your face in the outline'}
                     </div>
-                  )}
-                  <Webcam
-                    audio={false}
-                    ref={webcamRef}
-                    screenshotFormat="image/jpeg"
-                    videoConstraints={{ 
-                      facingMode: "user",
-                      // Less restrictive constraints to work on more devices
-                      width: { min: 640, ideal: 1280 },
-                      height: { min: 480, ideal: 1920 }
-                    }}
-                    className="w-full h-full rounded-lg object-cover"
-                    onUserMedia={handleUserMedia}
-                    onUserMediaError={handleWebcamError}
-                    mirrored={true}
-                    forceScreenshotSourceSize={true}
-                    screenshotQuality={0.92}
-                  />
-                  {/* Body silhouette guide overlay */}
-                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <svg width="80%" height="90%" viewBox="0 0 200 400" className="text-white opacity-50">
-                      {/* Head */}
-                      <circle cx="100" cy="70" r="40" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="5,5" />
-                      {/* Shoulders and body shape */}
-                      <path d="M 60,120 C 60,150 60,180 60,220 C 60,280 140,280 140,220 C 140,180 140,150 140,120" 
-                        fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="5,5" />
-                      {/* Center line for alignment */}
-                      <line x1="100" y1="0" x2="100" y2="400" stroke="currentColor" strokeWidth="2" strokeDasharray="5,5" />
-                    </svg>
                   </div>
+                )}
+                
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={handleCapture}
+                    disabled={!isWellPositioned && showGuidelines}
+                    className={`flex-1 flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+                      !isWellPositioned && showGuidelines
+                        ? 'bg-blue-400 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    Capture Photo
+                  </button>
                   
-                  {/* Position guidance message */}
-                  <div className="absolute top-2 left-0 right-0 text-center bg-black bg-opacity-70 text-white py-2 text-sm rounded-t">
-                    Position your face within the outline
-                  </div>
+                  <button
+                    onClick={toggleGuidelines}
+                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    {showGuidelines ? 'Hide' : 'Show'} Guide
+                  </button>
                   
-                  {/* Retry button when camera fails */}
-                  {!isCameraReady && mode === 'capture' && (
-                    <div className="mt-2 flex justify-center gap-4">
-                      <button
-                        onClick={() => {
-                          console.log('Manual camera reset requested');
-                          // Simple reset - unmount and remount camera
-                          setMode(null);
-                          setTimeout(() => setMode('capture'), 500);
-                        }}
-                        className="mt-2 text-sm text-blue-600 hover:text-blue-800 flex items-center"
-                      >
-                        <RefreshCw className="h-4 w-4 mr-1" /> Retry camera
-                      </button>
-                      
-                      <button
-                        onClick={() => {
-                          console.log('Switching to upload mode from failed camera');
-                          setMode('upload');
-                        }}
-                        className="mt-2 text-sm text-blue-600 hover:text-blue-800 flex items-center"
-                      >
-                        <Upload className="h-4 w-4 mr-1" /> Switch to upload
-                      </button>
-                    </div>
-                  )}
+                  <button
+                    onClick={toggleCameraFacing}
+                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    <SwitchCamera className="h-5 w-5" />
+                  </button>
                 </div>
                 
-                <button
-                  onClick={handleCapture}
-                  className="mt-4 w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-                >
-                  Capture Photo
-                </button>
+                <p className="mt-2 text-xs text-gray-500 text-center">
+                  Position yourself so your face and shoulders are visible
+                </p>
               </div>
             )}
           </div>
