@@ -17,7 +17,6 @@ const PhotoCapturePage = () => {
   const [isCheckingCamera, setIsCheckingCamera] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imageQualityWarning, setImageQualityWarning] = useState<string | null>(null);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const [isCameraReady, setIsCameraReady] = useState<boolean>(false);
 
@@ -32,7 +31,7 @@ const PhotoCapturePage = () => {
   useEffect(() => {
     if (mode === 'capture') {
       setIsCameraReady(false);
-      console.log('Camera mode activated, initializing webcam with facing mode:', facingMode);
+      console.log('Camera mode activated, initializing front-facing webcam');
       
       // Add a timeout to detect if camera initialization is stuck
       const cameraTimeout = setTimeout(() => {
@@ -48,16 +47,11 @@ const PhotoCapturePage = () => {
             });
           }
           
-          // Try to reset by toggling camera mode
-          if (isMobile) {
-            toggleCameraFacing();
-          } else {
-            // For desktop, try a complete reset
-            setMode(null);
-            setTimeout(() => setMode('capture'), 500);
-          }
+          // For desktop, try a complete reset
+          setMode(null);
+          setTimeout(() => setMode('capture'), 500);
           
-          setError('Camera initialization is taking too long. Try switching cameras or refreshing the page.');
+          setError('Camera initialization is taking too long. Try refreshing the page or switching to file upload.');
         }
       }, 10000);
       
@@ -74,7 +68,7 @@ const PhotoCapturePage = () => {
         }
       };
     }
-  }, [mode, facingMode, isCameraReady, isMobile]);
+  }, [mode, isCameraReady]);
 
   // Check if device has a camera
   useEffect(() => {
@@ -313,7 +307,7 @@ const PhotoCapturePage = () => {
       // Try to access the camera again to ensure permissions are still valid
       setIsCheckingCamera(true);
       setError(null); // Clear any previous errors
-      console.log('Attempting to initialize camera with facing mode:', facingMode);
+      console.log('Attempting to initialize front camera');
       
       // Stop any existing streams first
       if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
@@ -324,13 +318,12 @@ const PhotoCapturePage = () => {
         });
       }
       
-      // Explicitly request camera permissions with more detailed constraints
-      // but with flexible values to work on more devices
+      // Explicitly request front camera permissions with flexible constraints
       const constraints = { 
         video: {
-          facingMode: facingMode,
-          width: { ideal: 1280 },
-          height: { ideal: 1920 }
+          facingMode: "user",
+          width: { min: 640, ideal: 1280 },
+          height: { min: 480, ideal: 1920 }
         }, 
         audio: false 
       };
@@ -347,7 +340,7 @@ const PhotoCapturePage = () => {
           }, 200);
         })
         .catch((err) => {
-          console.error('Detailed camera access error:', err.name, err.message);
+          console.error('Camera access error:', err.name, err.message);
           
           // Try again with simpler constraints
           console.log('Trying with simplified constraints');
@@ -425,29 +418,6 @@ const PhotoCapturePage = () => {
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  // Function to toggle between front and back cameras
-  const toggleCameraFacing = () => {
-    // Properly clean up existing stream first
-    if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
-      const stream = webcamRef.current.video.srcObject as MediaStream;
-      stream.getTracks().forEach(track => {
-        console.log('Stopping track before toggling camera:', track.label);
-        track.stop();
-      });
-    }
-    
-    setIsCameraReady(false); // Reset camera ready status
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
-    
-    // Temporarily set mode to null to force a complete re-mount of the Webcam component
-    setMode(null);
-    
-    // Small delay to ensure state updates before reconnecting
-    setTimeout(() => {
-      setMode('capture');
-    }, 500);
   };
 
   // Function to handle webcam ready state
@@ -585,7 +555,7 @@ const PhotoCapturePage = () => {
                     ref={webcamRef}
                     screenshotFormat="image/jpeg"
                     videoConstraints={{ 
-                      facingMode: facingMode,
+                      facingMode: "user",
                       // Less restrictive constraints to work on more devices
                       width: { min: 640, ideal: 1280 },
                       height: { min: 480, ideal: 1920 }
@@ -593,7 +563,7 @@ const PhotoCapturePage = () => {
                     className="w-full h-full rounded-lg object-cover"
                     onUserMedia={handleUserMedia}
                     onUserMediaError={handleWebcamError}
-                    mirrored={facingMode === 'user'}
+                    mirrored={true}
                     forceScreenshotSourceSize={true}
                     screenshotQuality={0.92}
                   />
@@ -612,70 +582,43 @@ const PhotoCapturePage = () => {
                   
                   {/* Position guidance message */}
                   <div className="absolute top-2 left-0 right-0 text-center bg-black bg-opacity-70 text-white py-2 text-sm rounded-t">
-                    Position your {facingMode === 'user' ? 'face' : 'subject'} within the outline
+                    Position your face within the outline
                   </div>
                   
-                  {/* Camera troubleshooting hint */}
-                  {isCameraReady && isMobile && (
-                    <div className="absolute bottom-2 left-0 right-0 text-center bg-black bg-opacity-70 text-white py-1 text-xs rounded-b">
-                      Not seeing video? Try tapping the switch camera button
+                  {/* Retry button when camera fails */}
+                  {!isCameraReady && mode === 'capture' && (
+                    <div className="mt-2 flex justify-center gap-4">
+                      <button
+                        onClick={() => {
+                          console.log('Manual camera reset requested');
+                          // Simple reset - unmount and remount camera
+                          setMode(null);
+                          setTimeout(() => setMode('capture'), 500);
+                        }}
+                        className="mt-2 text-sm text-blue-600 hover:text-blue-800 flex items-center"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-1" /> Retry camera
+                      </button>
+                      
+                      <button
+                        onClick={() => {
+                          console.log('Switching to upload mode from failed camera');
+                          setMode('upload');
+                        }}
+                        className="mt-2 text-sm text-blue-600 hover:text-blue-800 flex items-center"
+                      >
+                        <Upload className="h-4 w-4 mr-1" /> Switch to upload
+                      </button>
                     </div>
                   )}
                 </div>
                 
-                {!isCameraReady && mode === 'capture' && (
-                  <div className="mt-2 flex justify-center gap-4">
-                    <button
-                      onClick={() => {
-                        console.log('Manual camera reset requested');
-                        if (isMobile) {
-                          toggleCameraFacing();
-                        } else {
-                          setMode(null);
-                          setTimeout(() => setMode('capture'), 500);
-                        }
-                      }}
-                      className="mt-2 text-sm text-blue-600 hover:text-blue-800 flex items-center"
-                    >
-                      <RefreshCw className="h-4 w-4 mr-1" /> Retry camera
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        console.log('Switching to upload mode from failed camera');
-                        setMode('upload');
-                      }}
-                      className="mt-2 text-sm text-blue-600 hover:text-blue-800 flex items-center"
-                    >
-                      <Upload className="h-4 w-4 mr-1" /> Switch to upload
-                    </button>
-                  </div>
-                )}
-                
-                {isMobile ? (
-                  <div className="flex gap-2 mt-4">
-                    <button
-                      onClick={handleCapture}
-                      className="flex-1 flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-                    >
-                      Capture Photo
-                    </button>
-                    <button
-                      onClick={toggleCameraFacing}
-                      className="flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                      title={`Switch to ${facingMode === 'user' ? 'back' : 'front'} camera`}
-                    >
-                      <SwitchCamera className="h-5 w-5" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={handleCapture}
-                    className="mt-4 w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-                  >
-                    Capture Photo
-                  </button>
-                )}
+                <button
+                  onClick={handleCapture}
+                  className="mt-4 w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  Capture Photo
+                </button>
               </div>
             )}
           </div>
