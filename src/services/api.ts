@@ -227,19 +227,224 @@ const simulateBackgroundRemoval = async (imageUrl: string): Promise<ApiResponse<
     // Draw original image
     ctx.drawImage(img, 0, 0);
     
-    // Create a simple background removal effect
-    // This is a simplified version that creates a clean oval cutout
-    ctx.globalCompositeOperation = 'destination-in';
+    // Get image data for pixel manipulation
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
     
-    // Create an elliptical path for the subject
-    ctx.beginPath();
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const radiusX = canvas.width * 0.45; // 45% of width
-    const radiusY = canvas.height * 0.85; // 85% of height
+    // Threshold values for background detection
+    const EDGE_THRESHOLD = 20; // Sensitivity for edge detection
+    const BACKGROUND_TOLERANCE = 30; // Color similarity threshold
     
-    ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // Create a mask for the background detection
+    const mask = new Uint8ClampedArray(data.length / 4);
+    
+    // Detect edges first (simple Sobel operator)
+    const edgeMap = new Uint8ClampedArray(data.length / 4);
+    for (let y = 1; y < canvas.height - 1; y++) {
+      for (let x = 1; x < canvas.width - 1; x++) {
+        const idx = (y * canvas.width + x);
+        const pixelIdx = idx * 4;
+        
+        // Check surrounding pixels for color difference
+        const current = {
+          r: data[pixelIdx],
+          g: data[pixelIdx + 1],
+          b: data[pixelIdx + 2]
+        };
+        
+        // Check pixel to the right
+        const rightIdx = pixelIdx + 4;
+        const right = {
+          r: data[rightIdx],
+          g: data[rightIdx + 1],
+          b: data[rightIdx + 2]
+        };
+        
+        // Check pixel below
+        const belowIdx = pixelIdx + (canvas.width * 4);
+        const below = {
+          r: data[belowIdx],
+          g: data[belowIdx + 1],
+          b: data[belowIdx + 2]
+        };
+        
+        // Calculate color difference
+        const diffRight = Math.abs(current.r - right.r) + 
+                         Math.abs(current.g - right.g) +
+                         Math.abs(current.b - right.b);
+                         
+        const diffBelow = Math.abs(current.r - below.r) + 
+                         Math.abs(current.g - below.g) +
+                         Math.abs(current.b - below.b);
+        
+        // If we detect a significant edge
+        if (diffRight > EDGE_THRESHOLD || diffBelow > EDGE_THRESHOLD) {
+          edgeMap[idx] = 255; // Mark as edge
+        }
+      }
+    }
+    
+    // Analyze the corners and edges to identify the likely background color
+    const colorSamples = [];
+    
+    // Sample the corners (likely background)
+    const cornerPoints = [
+      { x: 5, y: 5 },
+      { x: canvas.width - 5, y: 5 },
+      { x: 5, y: canvas.height - 5 },
+      { x: canvas.width - 5, y: canvas.height - 5 }
+    ];
+    
+    for (const point of cornerPoints) {
+      const idx = (point.y * canvas.width + point.x) * 4;
+      colorSamples.push({
+        r: data[idx],
+        g: data[idx + 1],
+        b: data[idx + 2]
+      });
+    }
+    
+    // Sample a few points along the edges
+    for (let i = 0; i < 10; i++) {
+      const x1 = Math.floor(canvas.width * (i / 10));
+      const x2 = Math.floor(canvas.width * (i / 10));
+      const y1 = 5;
+      const y2 = canvas.height - 5;
+      
+      const idx1 = (y1 * canvas.width + x1) * 4;
+      const idx2 = (y2 * canvas.width + x2) * 4;
+      
+      colorSamples.push({
+        r: data[idx1],
+        g: data[idx1 + 1],
+        b: data[idx1 + 2]
+      });
+      
+      colorSamples.push({
+        r: data[idx2],
+        g: data[idx2 + 1],
+        b: data[idx2 + 2]
+      });
+    }
+    
+    // Apply a flood fill from edges to identify background
+    // Mark every edge pixel as background
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        const idx = (y * canvas.width + x);
+        const pixelIdx = idx * 4;
+        
+        // Skip if already processed
+        if (mask[idx] !== 0) continue;
+        
+        // If we're at an edge of the image
+        if (x === 0 || y === 0 || x === canvas.width - 1 || y === canvas.height - 1) {
+          // This is likely background - compare with our background samples
+          const currentColor = {
+            r: data[pixelIdx],
+            g: data[pixelIdx + 1],
+            b: data[pixelIdx + 2]
+          };
+          
+          // Check if color is similar to our background samples
+          mask[idx] = 1; // Mark as background
+          
+          // Flood fill to connected similar colors
+          const queue = [{x, y}];
+          while (queue.length > 0) {
+            const {x: cx, y: cy} = queue.shift()!;
+            const currentIdx = (cy * canvas.width + cx);
+            const currentPixelIdx = currentIdx * 4;
+            
+            // Process neighbors
+            const neighbors = [
+              {x: cx - 1, y: cy}, // left
+              {x: cx + 1, y: cy}, // right
+              {x: cx, y: cy - 1}, // top
+              {x: cx, y: cy + 1}  // bottom
+            ];
+            
+            for (const {x: nx, y: ny} of neighbors) {
+              // Skip out of bounds
+              if (nx < 0 || ny < 0 || nx >= canvas.width || ny >= canvas.height) continue;
+              
+              const neighborIdx = (ny * canvas.width + nx);
+              
+              // Skip if already processed
+              if (mask[neighborIdx] !== 0) continue;
+              
+              const neighborPixelIdx = neighborIdx * 4;
+              const neighborColor = {
+                r: data[neighborPixelIdx],
+                g: data[neighborPixelIdx + 1],
+                b: data[neighborPixelIdx + 2]
+              };
+              
+              // Check color similarity
+              const colorDiff = Math.abs(neighborColor.r - currentColor.r) + 
+                              Math.abs(neighborColor.g - currentColor.g) +
+                              Math.abs(neighborColor.b - currentColor.b);
+                               
+              if (colorDiff < BACKGROUND_TOLERANCE && edgeMap[neighborIdx] === 0) {
+                mask[neighborIdx] = 1; // Mark as background
+                queue.push({x: nx, y: ny});
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Apply the mask - make background transparent
+    for (let i = 0; i < data.length; i += 4) {
+      const idx = i / 4;
+      if (mask[idx] === 1) {
+        // This is background, make it transparent
+        data[i + 3] = 0; // Set alpha to 0
+      }
+    }
+    
+    // If the subject was detected as background (which can happen), use distance from center as fallback
+    let hasSubject = false;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] > 0) {
+        hasSubject = true;
+        break;
+      }
+    }
+    
+    if (!hasSubject) {
+      console.log("Subject detection failed, using center-based approach");
+      // Reset alpha values
+      for (let i = 0; i < data.length; i += 4) {
+        data[i + 3] = 255;
+      }
+      
+      // Use distance from center approach as fallback
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const idx = (y * canvas.width + x) * 4;
+          
+          // Calculate normalized distance from center (0-1)
+          const distX = (x - centerX) / (canvas.width / 2);
+          const distY = (y - centerY) / (canvas.height / 2);
+          const dist = Math.sqrt(distX * distX + distY * distY);
+          
+          // Use a soft falloff for transparency
+          if (dist > 0.7) {
+            // Gradually decrease alpha from edge
+            const alpha = Math.max(0, 1 - (dist - 0.7) * 3);
+            data[idx + 3] = Math.round(255 * alpha);
+          }
+        }
+      }
+    }
+    
+    // Put the modified image data back on the canvas
+    ctx.putImageData(imageData, 0, 0);
     
     // Convert to data URL
     const processedImageUrl = canvas.toDataURL('image/png');
