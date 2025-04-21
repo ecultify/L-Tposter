@@ -107,13 +107,16 @@ const PosterGeneratorPage = () => {
             
             // Split the tagline into multiple lines if needed
             let taglineLines: string[] = [];
-            if (tagline.length > 40) {
+            // Increase width of each line to use more horizontal space
+            const maxLineLength = 40; // Increased from 25
+            
+            if (tagline.length > 35) {
               // Break into multiple lines
               const words = tagline.split(' ');
               let currentLine = '';
               
               words.forEach((word) => {
-                if ((currentLine + word).length < 30) {
+                if ((currentLine + word).length < maxLineLength) {
                   currentLine += (currentLine ? ' ' : '') + word;
                 } else {
                   taglineLines.push(currentLine);
@@ -131,47 +134,58 @@ const PosterGeneratorPage = () => {
 
             // Inspirational message at the top (white, large, bold text)
             ctx.fillStyle = 'white';
-            ctx.font = 'bold 56px Arial';
+            ctx.font = 'bold 48px Arial'; // Slightly larger than 45px
             ctx.textAlign = 'left';
             
+            // Calculate proper vertical spacing for taglines
+            const taglineStartY = canvas.height * 0.12;
+            const taglineLineHeight = 60; // Reduced from 65
+            
             taglineLines.forEach((line, index) => {
-              ctx.fillText(line, 60, canvas.height * 0.12 + (index * 80));
+              ctx.fillText(line, 60, taglineStartY + (index * taglineLineHeight));
             });
             
-            // User details in the middle-left part
-            // Using a yellow/gold circle with icon and info
-            const circleY = canvas.height * 0.4;
+            // Fixed positioning for company info regardless of tagline length
+            // This ensures contact info stays in the proper position
+            const circleY = canvas.height * 0.42 - 45; // Moved up by 45px
+            
+            // Calculate space between tagline and company info
+            const taglineEndY = taglineStartY + (taglineLines.length * taglineLineHeight);
+            const minSpacing = 50; // Minimum space between tagline and company info
+            
+            // Only adjust company info position if tagline is too close
+            const adjustedCircleY = Math.max(circleY, taglineEndY + minSpacing);
             
             // Draw user icon circles (yellow background)
             ctx.beginPath();
-            ctx.arc(80, circleY, 30, 0, 2 * Math.PI);
+            ctx.arc(80, adjustedCircleY, 30, 0, 2 * Math.PI);
             ctx.fillStyle = '#FFC72C'; // L&T Finance gold/yellow color
             ctx.fill();
             
             // Draw phone icon circle
             ctx.beginPath();
-            ctx.arc(80, circleY + 85, 30, 0, 2 * Math.PI);
+            ctx.arc(80, adjustedCircleY + 85, 30, 0, 2 * Math.PI);
             ctx.fill();
             
             // Draw person icon in the first circle (simplified)
             ctx.fillStyle = 'black';
             ctx.font = 'bold 24px Arial';
-            ctx.fillText('👤', 68, circleY + 8);
+            ctx.fillText('👤', 68, adjustedCircleY + 8);
             
             // Draw phone icon in the second circle (simplified)
-            ctx.fillText('📞', 68, circleY + 93);
+            ctx.fillText('📞', 68, adjustedCircleY + 93);
             
             // Draw user info text
             ctx.fillStyle = 'white';
             ctx.font = 'bold 28px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText(userData.companyName || 'Mr. Ravi Kumar', 130, circleY - 15);
+            ctx.fillText(userData.companyName || 'Mr. Ravi Kumar', 130, adjustedCircleY - 15);
             ctx.font = '22px Arial';
-            ctx.fillText(userData.businessType || 'Precision Manufacturing Co.', 130, circleY + 15);
+            ctx.fillText(userData.businessType || 'Precision Manufacturing Co.', 130, adjustedCircleY + 15);
             
             // Phone number
             ctx.font = 'bold 28px Arial';
-            ctx.fillText(userData.phoneNumber || '8765343009', 130, circleY + 95);
+            ctx.fillText(userData.phoneNumber || '8765343009', 130, adjustedCircleY + 95);
             
             // Convert the composite image to data URL
             const compositeImageUrl = canvas.toDataURL('image/png');

@@ -72,15 +72,26 @@ const PhotoCapturePage = () => {
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      setError("No file selected. Please try again.");
+      return;
+    }
     
     // Reset any previous warnings
     setImageQualityWarning(null);
     setError(null);
     
+    // Check if file is an image
+    const validImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff', 'image/svg+xml'];
+    if (!validImageTypes.includes(file.type)) {
+      setError(`Unsupported file type: ${file.type}. Please upload a JPG, PNG, GIF, WebP, BMP, TIFF, or SVG image.`);
+      return;
+    }
+    
     // Check file size - max 10MB
-    if (file.size > 10 * 1024 * 1024) {
-      setError('File size exceeds 10MB. Please choose a smaller image.');
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      setError(`File size exceeds 10MB. Please choose a smaller image.`);
       return;
     }
     
@@ -88,29 +99,83 @@ const PhotoCapturePage = () => {
     setImage('loading');
     
     const reader = new FileReader();
+    
+    // Add a timeout for very large files
+    const readerTimeout = setTimeout(() => {
+      if (reader.readyState !== 2) { // DONE state
+        reader.abort();
+        setError("Reading the file is taking too long. The file may be too large. Please try a smaller image.");
+        setImage(null);
+      }
+    }, 15000); // 15 second timeout
+    
     reader.onloadend = () => {
+      clearTimeout(readerTimeout);
+      
+      if (!reader.result) {
+        setError("Failed to read the image file. Please try again with a different file.");
+        setImage(null);
+        return;
+      }
+      
       const imageSrc = reader.result as string;
       
       // Pre-load the image to ensure it's fully loaded before setting it
       const img = new Image();
+      
+      // Handle timeouts for large images
+      const imageLoadTimeout = setTimeout(() => {
+        if (!img.complete) {
+          setError("Image is taking too long to load. It may be too large or corrupted. Please try a different image.");
+          setImage(null);
+        }
+      }, 10000); // 10 second timeout
+      
       img.onload = () => {
+        clearTimeout(imageLoadTimeout);
+        
+        // Check if the image is too small (less than 100x100)
+        if (img.width < 100 || img.height < 100) {
+          setError("Image is too small. Please upload a larger image for better results.");
+          setImage(null);
+          return;
+        }
+        
+        // Check if the image is too large (more than 4000x4000)
+        if (img.width > 4000 || img.height > 4000) {
+          // We'll still use it, but warn the user
+          setImageQualityWarning("Image is very large and may cause performance issues.");
+        }
+        
+        // Set the image and check quality
         setImage(imageSrc);
-        // Check image quality
         checkImageQuality(imageSrc);
       };
+      
       img.onerror = () => {
-        setError('Failed to load the image. Please try another file.');
+        clearTimeout(imageLoadTimeout);
+        setError("Failed to load the image. The file may be corrupted or not a valid image. Please try another file.");
         setImage(null);
       };
+      
       img.src = imageSrc;
     };
     
     reader.onerror = () => {
-      setError('Failed to read the image file. Please try again.');
+      clearTimeout(readerTimeout);
+      console.error("FileReader error:", reader.error);
+      setError(`Failed to read the image file: ${reader.error?.message || 'Unknown error'}. Please try again with a different file.`);
       setImage(null);
     };
     
-    reader.readAsDataURL(file);
+    // Start reading the file
+    try {
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Error reading file:", error);
+      setError(`Error reading file: ${error instanceof Error ? error.message : 'Unknown error'}. Please try a different file.`);
+      setImage(null);
+    }
   };
 
   const checkImageQuality = (imageSrc: string) => {
@@ -202,12 +267,18 @@ const PhotoCapturePage = () => {
       const response = await fetch(image);
       const blob = await response.blob();
 
+      // Show processing status to user
+      setError('Processing your image. This may take a moment...');
+
       // Call remove.bg API through our service
       const bgRemovalResponse = await removeBackground(blob);
 
       if (!bgRemovalResponse.success) {
         throw new Error(bgRemovalResponse.error || 'Failed to process image');
       }
+
+      // Clear processing message
+      setError(null);
 
       // Save both original and processed images to context
       setProcessedImage({
@@ -290,7 +361,7 @@ const PhotoCapturePage = () => {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,image/tiff,image/svg+xml"
                   className="hidden"
                   onChange={handleFileUpload}
                 />
@@ -369,13 +440,13 @@ const PhotoCapturePage = () => {
                     Click to upload
                   </span>
                   <p className="text-xs text-gray-500">
-                    PNG, JPG, GIF up to 10MB
+                    JPG, PNG, GIF, WebP, BMP, TIFF, SVG up to 10MB
                   </p>
                 </div>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,image/tiff,image/svg+xml"
                   className="hidden"
                   onChange={handleFileUpload}
                 />
@@ -394,12 +465,17 @@ const PhotoCapturePage = () => {
               {isProcessing ? (
                 <>
                   <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                  Processing...
+                  {error && error.includes('Processing') ? 'Removing Background...' : 'Processing...'}
                 </>
               ) : (
                 'Continue with this Photo'
               )}
             </button>
+            {isProcessing && (
+              <p className="text-xs text-gray-500 text-center mt-2">
+                Background removal may take a few moments. Please be patient.
+              </p>
+            )}
           </div>
         )}
       </div>

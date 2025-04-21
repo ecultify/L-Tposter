@@ -105,7 +105,7 @@ const CompanyInfoPage = () => {
       // For now, we'll simulate the API call with a timeout
       const prompt = `Generate a catchy, professional tagline for a ${businessType} business named "${businessName}". 
       The tagline should incorporate these key themes: ${selectedKeywords.join(', ')}.
-      Make it concise (maximum 8 words) and memorable.`;
+      Make it longer (8-10 words) and memorable.`;
       
       console.log('Generating tagline with prompt:', prompt);
       
@@ -113,17 +113,17 @@ const CompanyInfoPage = () => {
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       const fakeTaglines = {
-        retail: `${selectedKeywords[0] || 'Quality'} retail experience with ${selectedKeywords[1] || 'personalized'} service`,
-        service: `${selectedKeywords[0] || 'Reliable'} service, ${selectedKeywords[1] || 'trusted'} results`,
-        restaurant: `${selectedKeywords[0] || 'Fresh'}, ${selectedKeywords[1] || 'authentic'} flavors await`,
-        technology: `${selectedKeywords[0] || 'Innovative'} solutions for ${selectedKeywords[1] || 'tomorrow'}'s challenges`,
-        manufacturing: `${selectedKeywords[0] || 'Precision'} ${selectedKeywords[1] || 'engineering'}, reliable results`,
-        financial: `Building ${selectedKeywords[0] || 'prosperity'} through ${selectedKeywords[1] || 'trusted'} partnerships`,
-        other: `${selectedKeywords[0] || 'Excellence'} in ${selectedKeywords[1] || 'everything'} we do`
+        retail: `Discover the finest ${selectedKeywords[0] || 'quality'} products with our ${selectedKeywords[1] || 'personalized'} customer service that ensures complete satisfaction for all your needs.`,
+        service: `Experience ${selectedKeywords[0] || 'reliable'}, ${selectedKeywords[1] || 'trusted'} service excellence that exceeds expectations and delivers remarkable results for every customer, every time.`,
+        restaurant: `Indulge in our ${selectedKeywords[0] || 'fresh'}, ${selectedKeywords[1] || 'authentic'} culinary creations that transport your taste buds to new and exciting flavor destinations.`,
+        technology: `Transforming tomorrow through ${selectedKeywords[0] || 'innovative'} ${selectedKeywords[1] || 'cutting-edge'} solutions that empower businesses and individuals to achieve their fullest potential.`,
+        manufacturing: `Crafting ${selectedKeywords[0] || 'precision'} ${selectedKeywords[1] || 'engineered'} products with meticulous attention to detail and unwavering commitment to excellence in every piece.`,
+        financial: `Building lasting financial ${selectedKeywords[0] || 'prosperity'} through ${selectedKeywords[1] || 'trusted'} partnerships and strategic planning that secures your future for generations to come.`,
+        other: `Committed to delivering ${selectedKeywords[0] || 'excellence'} in ${selectedKeywords[1] || 'everything'} we do, setting new standards in our industry and exceeding your highest expectations.`
       };
       
       // Generate a more personalized tagline based on selected keywords
-      const tagline = fakeTaglines[businessType as keyof typeof fakeTaglines] || `Your ${selectedKeywords.join(' and ')} partner`;
+      const tagline = fakeTaglines[businessType as keyof typeof fakeTaglines] || `Your dedicated partner in delivering ${selectedKeywords.join(', ')} solutions that transform challenges into opportunities for sustainable growth.`;
       console.log('Generated tagline:', tagline);
       
       setGeneratedTagline(tagline);
@@ -146,7 +146,7 @@ const CompanyInfoPage = () => {
               }
             ],
             temperature: 0.7,
-            max_tokens: 50
+            max_tokens: 100
           })
         });
         
@@ -201,6 +201,32 @@ const CompanyInfoPage = () => {
     }
   };
 
+  // Check if fields were pre-filled from OTP verification
+  const isPrefilledFromVerification = (field: keyof CompanyFormData): boolean => {
+    if (!isVerified) return false;
+    
+    // Check if this field had a value when coming from OTP verification
+    const initialValues = {
+      name: userData.companyName,
+      tagline: userData.tagline,
+      businessType: userData.businessType,
+      address: userData.address,
+      phone: userData.phoneNumber,
+      email: userData.email
+    };
+    
+    // Special case for tagline - always allow editing
+    if (field === 'tagline') return false;
+    
+    return !!initialValues[field];
+  };
+
+  // Help text to show for read-only fields
+  const getReadOnlyHelperText = (field: keyof CompanyFormData) => {
+    return isPrefilledFromVerification(field) ? 
+      "This field is pre-filled from your verified account and cannot be edited" : "";
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
@@ -219,16 +245,20 @@ const CompanyInfoPage = () => {
               <input
                 type="text"
                 {...register('name', { required: 'Company name is required' })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className={`mt-1 block w-full rounded-md ${isPrefilledFromVerification('name') ? 'bg-gray-100' : 'border-gray-300'} shadow-sm focus:border-blue-500 focus:ring-blue-500`}
+                readOnly={isPrefilledFromVerification('name')}
               />
               {errors.name && <span className="text-red-500 text-sm">{errors.name.message}</span>}
+              {isPrefilledFromVerification('name') && 
+                <p className="mt-1 text-xs text-blue-600">{getReadOnlyHelperText('name')}</p>}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700">Business Type</label>
               <select
                 {...register('businessType', { required: 'Business type is required' })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className={`mt-1 block w-full rounded-md ${isPrefilledFromVerification('businessType') ? 'bg-gray-100' : 'border-gray-300'} shadow-sm focus:border-blue-500 focus:ring-blue-500`}
+                disabled={isPrefilledFromVerification('businessType')}
               >
                 <option value="">Select a type</option>
                 <option value="retail">Retail</option>
@@ -240,6 +270,8 @@ const CompanyInfoPage = () => {
                 <option value="other">Other</option>
               </select>
               {errors.businessType && <span className="text-red-500 text-sm">{errors.businessType.message}</span>}
+              {isPrefilledFromVerification('businessType') && 
+                <p className="mt-1 text-xs text-blue-600">{getReadOnlyHelperText('businessType')}</p>}
             </div>
 
             {businessType && (
@@ -301,7 +333,7 @@ const CompanyInfoPage = () => {
                     )}
                     {!isGeneratingTagline && (
                       <p className="mt-1 text-xs text-gray-500">
-                        Generate a tagline using AI based on your selected keywords
+                        Generate a tagline (8-10 words) using AI based on your selected keywords
                       </p>
                     )}
                   </div>
@@ -315,9 +347,12 @@ const CompanyInfoPage = () => {
               <textarea
                 {...register('address', { required: 'Address is required' })}
                 rows={3}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className={`mt-1 block w-full rounded-md ${isPrefilledFromVerification('address') ? 'bg-gray-100' : 'border-gray-300'} shadow-sm focus:border-blue-500 focus:ring-blue-500`}
+                readOnly={isPrefilledFromVerification('address')}
               />
               {errors.address && <span className="text-red-500 text-sm">{errors.address.message}</span>}
+              {isPrefilledFromVerification('address') && 
+                <p className="mt-1 text-xs text-blue-600">{getReadOnlyHelperText('address')}</p>}
             </div>
 
             <div>
@@ -328,18 +363,24 @@ const CompanyInfoPage = () => {
                     type="tel"
                     {...register('phone', { required: 'Phone is required' })}
                     placeholder="Phone"
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    className={`block w-full rounded-md ${isPrefilledFromVerification('phone') ? 'bg-gray-100' : 'border-gray-300'} shadow-sm focus:border-blue-500 focus:ring-blue-500`}
+                    readOnly={isPrefilledFromVerification('phone')}
                   />
                   {errors.phone && <span className="text-red-500 text-sm">{errors.phone.message}</span>}
+                  {isPrefilledFromVerification('phone') && 
+                    <p className="mt-1 text-xs text-blue-600">{getReadOnlyHelperText('phone')}</p>}
                 </div>
                 <div>
                   <input
                     type="email"
                     {...register('email', { required: 'Email is required' })}
                     placeholder="Email"
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    className={`block w-full rounded-md ${isPrefilledFromVerification('email') ? 'bg-gray-100' : 'border-gray-300'} shadow-sm focus:border-blue-500 focus:ring-blue-500`}
+                    readOnly={isPrefilledFromVerification('email')}
                   />
                   {errors.email && <span className="text-red-500 text-sm">{errors.email.message}</span>}
+                  {isPrefilledFromVerification('email') && 
+                    <p className="mt-1 text-xs text-blue-600">{getReadOnlyHelperText('email')}</p>}
                 </div>
               </div>
             </div>

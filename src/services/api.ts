@@ -151,47 +151,89 @@ export const removeBackground = async (imageFile: Blob): Promise<ApiResponse<str
       reader.readAsDataURL(imageFile);
     });
     
-    try {
-      // First try the remove.bg API
-      // Create form data for the API request
-      const formData = new FormData();
-      formData.append('image_file', imageFile);
-      formData.append('size', 'auto');
-      formData.append('format', 'png');
-
-      // Call remove.bg API with a timeout to prevent hanging
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-      const response = await fetch('https://api.remove.bg/v1.0/removebg', {
-        method: 'POST',
-        headers: {
-          'X-Api-Key': API_CONFIG.removeApiKey,
-        },
-        body: formData,
-        signal: controller.signal
-      });
+    // Maximum number of API call attempts
+    const maxAttempts = 2;
+    let currentAttempt = 0;
+    let lastError: Error | null = null;
+    
+    // Try multiple attempts
+    while (currentAttempt < maxAttempts) {
+      currentAttempt++;
+      console.log(`API attempt ${currentAttempt}/${maxAttempts}`);
       
-      clearTimeout(timeoutId);
+      try {
+        // Create form data for the API request
+        const formData = new FormData();
+        formData.append('image_file', imageFile);
+        formData.append('size', 'auto');
+        formData.append('format', 'png');
 
-      if (!response.ok) {
-        throw new Error(`Failed to process image: ${response.statusText}`);
+        // Call remove.bg API with a longer timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout (increased from 5s)
+
+        const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+          method: 'POST',
+          headers: {
+            'X-Api-Key': API_CONFIG.removeApiKey,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          },
+          body: formData,
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`Failed to process image: ${response.statusText}`);
+        }
+
+        // Convert the response to a blob and then to a data URL
+        const processedImageBlob = await response.blob();
+        
+        // Validate the blob - make sure it's actually a PNG and has content
+        if (processedImageBlob.size < 100) {
+          throw new Error('Received empty or invalid image from API');
+        }
+        
+        const processedImageUrl = URL.createObjectURL(processedImageBlob);
+        
+        // Pre-load the image to ensure it's complete
+        await new Promise<void>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            // Make sure the image has a width and height
+            if (img.width > 0 && img.height > 0) {
+              resolve();
+            } else {
+              reject(new Error('Processed image has invalid dimensions'));
+            }
+          };
+          img.onerror = () => reject(new Error('Failed to load processed image'));
+          img.src = processedImageUrl;
+        });
+        
+        console.log('Background removal successful');
+        return {
+          success: true,
+          data: processedImageUrl
+        };
+      } catch (apiError) {
+        lastError = apiError instanceof Error ? apiError : new Error(String(apiError));
+        console.warn(`API attempt ${currentAttempt} failed:`, apiError);
+        
+        // If we have more attempts, wait briefly before trying again
+        if (currentAttempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between attempts
+        }
       }
-
-      // Convert the response to a blob and then to a data URL
-      const processedImageBlob = await response.blob();
-      const processedImageUrl = URL.createObjectURL(processedImageBlob);
-      
-      return {
-        success: true,
-        data: processedImageUrl
-      };
-    } catch (apiError) {
-      console.warn('API call failed, using fallback method:', apiError);
-      
-      // Use the fallback method if the API call fails
-      return simulateBackgroundRemoval(imageUrl);
     }
+    
+    // If we've exhausted all API attempts, use the fallback
+    console.warn('All API attempts failed, using fallback method:', lastError);
+    return simulateBackgroundRemoval(imageUrl);
+    
   } catch (error) {
     console.error('Background removal error:', error);
     return {
