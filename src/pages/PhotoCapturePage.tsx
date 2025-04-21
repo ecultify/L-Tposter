@@ -448,17 +448,37 @@ const PhotoCapturePage = () => {
               </div>
             ) : (
               <div className="relative">
-                <Webcam
-                  audio={false}
-                  ref={webcamRef}
-                  screenshotFormat="image/jpeg"
-                  videoConstraints={{ 
-                    facingMode: facingMode,
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                  }}
-                  className="w-full rounded-lg"
-                />
+                <div className="aspect-[3/4] mx-auto relative max-w-md">
+                  <Webcam
+                    audio={false}
+                    ref={webcamRef}
+                    screenshotFormat="image/jpeg"
+                    videoConstraints={{ 
+                      facingMode: facingMode,
+                      width: { ideal: 1280 },
+                      height: { ideal: 1920 }
+                    }}
+                    className="w-full h-full rounded-lg object-cover"
+                  />
+                  {/* Body silhouette guide overlay */}
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <svg width="80%" height="90%" viewBox="0 0 200 400" className="text-white opacity-30">
+                      {/* Head */}
+                      <circle cx="100" cy="70" r="40" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="5,5" />
+                      {/* Shoulders and body shape */}
+                      <path d="M 60,120 C 60,150 60,180 60,220 C 60,280 140,280 140,220 C 140,180 140,150 140,120" 
+                        fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="5,5" />
+                      {/* Center line for alignment */}
+                      <line x1="100" y1="0" x2="100" y2="400" stroke="currentColor" strokeWidth="1" strokeDasharray="5,5" />
+                    </svg>
+                  </div>
+                  
+                  {/* Position guidance message */}
+                  <div className="absolute top-2 left-0 right-0 text-center bg-black bg-opacity-50 text-white py-1 text-sm rounded">
+                    Position your {facingMode === 'user' ? 'face' : 'subject'} within the outline
+                  </div>
+                </div>
+                
                 {isMobile ? (
                   <div className="flex gap-2 mt-4">
                     <button
@@ -470,6 +490,7 @@ const PhotoCapturePage = () => {
                     <button
                       onClick={toggleCameraFacing}
                       className="flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                      title={`Switch to ${facingMode === 'user' ? 'back' : 'front'} camera`}
                     >
                       <SwitchCamera className="h-5 w-5" />
                     </button>
