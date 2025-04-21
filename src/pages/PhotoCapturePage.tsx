@@ -946,7 +946,7 @@ const PhotoCapturePage = () => {
                   {captureMode === 'selfie' && (
                     <div className="mt-2 bg-blue-50 p-2 rounded text-xs text-blue-700 flex items-center">
                       <Sparkles className="h-4 w-4 mr-1" />
-                      We'll remove the background and create a professional portrait
+                      We'll remove the background and add a professional stock photo
                     </div>
                   )}
                 </div>
@@ -1020,7 +1020,7 @@ const PhotoCapturePage = () => {
               {isProcessing ? (
                 <>
                   <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                  {error && error.includes('Creating professional') ? 'Creating AI Portrait...' :
+                  {error && error.includes('Creating professional') ? 'Adding Stock Photo...' :
                     error && error.includes('Removing background') ? 'Removing Background...' : 
                     'Processing...'}
                 </>
@@ -1029,7 +1029,7 @@ const PhotoCapturePage = () => {
                   {captureMode === 'selfie' ? (
                     <>
                       <Sparkles className="mr-2 h-5 w-5" />
-                      Process Selfie with AI
+                      Process with Professional Stock Photo
                     </>
                   ) : (
                     'Continue with this Photo'
@@ -1040,7 +1040,7 @@ const PhotoCapturePage = () => {
             {isProcessing && (
               <p className="text-xs text-gray-500 text-center mt-2">
                 {captureMode === 'selfie' 
-                  ? "We'll remove the background and create a professional portrait. This may take up to a minute."
+                  ? "We'll remove the background and add a professional stock photo. This may take a moment."
                   : 'Background removal may take a few moments. Please be patient.'}
               </p>
             )}
@@ -1058,7 +1058,7 @@ const PhotoCapturePage = () => {
               </h3>
               <p className="text-gray-600 mb-4">
                 {error && error.includes('Creating professional') ? 
-                  "We're using AI to create a professional portrait. This takes longer..." : 
+                  "We're selecting a professional stock photo for your poster..." : 
                   "We're preparing your image by removing the background..."}
               </p>
               <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
@@ -1072,7 +1072,7 @@ const PhotoCapturePage = () => {
               </div>
               <p className="text-xs text-blue-600 font-medium mb-3">
                 {error && error.includes('Creating professional') ? 
-                  'Step 2 of 2: AI Portrait Generation' : 
+                  'Step 2 of 2: Professional Stock Photo' : 
                   'Step 1 of 2: Background Removal'}
               </p>
               <p className="text-xs text-gray-500">This two-step process may take up to a minute</p>
