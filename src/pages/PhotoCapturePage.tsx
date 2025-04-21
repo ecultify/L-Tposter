@@ -19,7 +19,7 @@ const PhotoCapturePage = () => {
   const [imageQualityWarning, setImageQualityWarning] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isMobile, setIsMobile] = useState<boolean>(false);
-  const [showGuidelines, setShowGuidelines] = useState<boolean>(true);
+  const [showGuidelines, setShowGuidelines] = useState<boolean>(false);
   const [isWellPositioned, setIsWellPositioned] = useState<boolean>(false);
   // New state variables for AI image generation
   const [isGeneratingAIImage, setIsGeneratingAIImage] = useState<boolean>(false);
@@ -39,6 +39,8 @@ const PhotoCapturePage = () => {
       marginLeft: 'auto',
       marginRight: 'auto',
       overflow: 'hidden',
+      backgroundColor: '#f0f0f0', // Added to show camera container even when camera isn't loaded yet
+      minHeight: '400px', // Added to ensure container has height before camera loads
     },
     webcam: {
       width: '100%',
@@ -96,6 +98,14 @@ const PhotoCapturePage = () => {
     notPositioned: {
       backgroundColor: 'rgba(200, 200, 200, 0.7)',
       color: 'white',
+    },
+    cameraLoadingIndicator: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      color: '#666',
+      textAlign: 'center',
     }
   };
 
@@ -428,7 +438,7 @@ const PhotoCapturePage = () => {
           facingMode: facingMode,
           width: { ideal: 720 },
           height: { ideal: 1080 }, // Make height larger than width for portrait
-          aspectRatio: { ideal: 0.6667 } // 2:3 aspect ratio for portrait
+          aspectRatio: { ideal: 0.75 } // Updated to match our 3:4 aspect ratio
         }, 
         audio: false 
       };
@@ -760,6 +770,12 @@ const PhotoCapturePage = () => {
               </div>
             ) : (
               <div style={cameraStyles.container as React.CSSProperties}>
+                {/* Camera loading indicator */}
+                <div style={cameraStyles.cameraLoadingIndicator as React.CSSProperties}>
+                  <Loader2 className="mx-auto h-8 w-8 animate-spin mb-2" />
+                  <p>Activating camera...</p>
+                </div>
+                
                 <Webcam
                   audio={false}
                   ref={webcamRef}
@@ -771,6 +787,13 @@ const PhotoCapturePage = () => {
                     aspectRatio: { ideal: 0.75 } // 3:4 aspect ratio for portrait
                   }}
                   style={cameraStyles.webcam as React.CSSProperties}
+                  onUserMedia={() => {
+                    // Hide the loading indicator when camera is ready
+                    const loadingIndicator = document.querySelector('[style*="cameraLoadingIndicator"]');
+                    if (loadingIndicator) {
+                      (loadingIndicator as HTMLElement).style.display = 'none';
+                    }
+                  }}
                 />
                 
                 {showGuidelines && (
@@ -792,9 +815,9 @@ const PhotoCapturePage = () => {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     onClick={handleCapture}
-                    disabled={!isWellPositioned && showGuidelines}
+                    disabled={showGuidelines && !isWellPositioned}
                     className={`flex-1 flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                      !isWellPositioned && showGuidelines
+                      showGuidelines && !isWellPositioned
                         ? 'bg-blue-400 cursor-not-allowed'
                         : 'bg-blue-600 hover:bg-blue-700'
                     }`}

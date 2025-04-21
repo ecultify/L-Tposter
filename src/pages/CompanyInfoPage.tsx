@@ -307,8 +307,9 @@ const CompanyInfoPage = () => {
                 <input
                   type="text"
                   {...register('tagline', { required: 'Tagline is required' })}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-100"
                   placeholder="Your company's slogan or motto"
+                  readOnly={true}
                 />
                 {selectedKeywords.length > 0 && (
                   <div className="mt-2">
@@ -331,11 +332,9 @@ const CompanyInfoPage = () => {
                         Generate with AI
                       </button>
                     )}
-                    {!isGeneratingTagline && (
-                      <p className="mt-1 text-xs text-gray-500">
-                        Generate a tagline (8-10 words) using AI based on your selected keywords
-                      </p>
-                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      Your tagline will be automatically generated based on your selected keywords
+                    </p>
                   </div>
                 )}
               </div>
