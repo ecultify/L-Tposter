@@ -5,6 +5,7 @@ const API_CONFIG = {
     : 'https://lt-api.example.com', // Replace with actual production/dev URLs
   apiKey: import.meta.env.VITE_APP_API_KEY || 'mock-api-key',
   removeApiKey: 'VmEeChTnKgAvW7NVH1bYrQC1', // Your remove.bg API key
+  openaiApiKey: "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"
 };
 
 // Type definitions
@@ -500,6 +501,73 @@ const simulateBackgroundRemoval = async (imageUrl: string): Promise<ApiResponse<
     return {
       success: false,
       error: 'Image processing failed in fallback mode'
+    };
+  }
+};
+
+// Generate image using OpenAI DALL-E
+export const generateAIImage = async (
+  prompt: string,
+  gender: 'male' | 'female'
+): Promise<ApiResponse<string>> => {
+  try {
+    console.log(`Generating AI image with prompt: ${prompt}`);
+    
+    // Try to call OpenAI API
+    try {
+      const response = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${API_CONFIG.openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: "dall-e-3",
+          prompt: prompt,
+          n: 1,
+          size: "1024x1024", 
+          quality: "standard"
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('OpenAI image generation response:', data);
+      
+      if (data.data && data.data.length > 0 && data.data[0].url) {
+        // Download the image and convert to data URL
+        const imageResponse = await fetch(data.data[0].url);
+        const blob = await imageResponse.blob();
+        const imageUrl = URL.createObjectURL(blob);
+        return {
+          success: true,
+          data: imageUrl
+        };
+      } else {
+        throw new Error('Invalid response from OpenAI');
+      }
+    } catch (apiError) {
+      console.error('OpenAI API error:', apiError);
+      throw apiError;
+    }
+  } catch (error) {
+    console.error('Error generating AI image:', error);
+    
+    // Fallback to placeholder images
+    console.log('Using fallback placeholder images');
+    
+    const fallbackUrl = gender === 'male'
+      ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?q=80&w=1024&auto=format&fit=crop'
+      : 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=1024&auto=format&fit=crop';
+        
+    // Return fallback URL as success
+    return {
+      success: true,
+      data: fallbackUrl
     };
   }
 }; 

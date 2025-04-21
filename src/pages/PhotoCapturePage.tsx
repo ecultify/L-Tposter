@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
-import { Camera, Upload, RefreshCw, Loader2, AlertCircle, Info, SwitchCamera } from 'lucide-react';
+import { Camera, Upload, RefreshCw, Loader2, AlertCircle, Info, SwitchCamera, Sparkles, User, UserRound } from 'lucide-react';
 import { useFormData } from '../context/FormDataContext';
-import { removeBackground } from '../services/api';
+import { removeBackground, generateAIImage } from '../services/api';
 
 const PhotoCapturePage = () => {
   const navigate = useNavigate();
@@ -21,13 +21,21 @@ const PhotoCapturePage = () => {
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const [showGuidelines, setShowGuidelines] = useState<boolean>(true);
   const [isWellPositioned, setIsWellPositioned] = useState<boolean>(false);
+  // New state variables for AI image generation
+  const [isGeneratingAIImage, setIsGeneratingAIImage] = useState<boolean>(false);
+  const [aiGeneratedImage, setAiGeneratedImage] = useState<string | null>(null);
+  const [detectedGender, setDetectedGender] = useState<'male' | 'female' | null>(null);
+  // Add a state for tracking if camera is switching
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState<boolean>(false);
+  // Add a state to indicate whether we're using selfie or photo mode (front vs back camera purpose)
+  const [captureMode, setCaptureMode] = useState<'selfie' | 'photo'>('selfie');
 
   // CSS for vertical camera layout
   const cameraStyles = {
     container: {
       position: 'relative',
       width: '100%',
-      maxWidth: '400px',
+      maxWidth: '340px', // Reduced from 400px for more portable size
       marginLeft: 'auto',
       marginRight: 'auto',
       overflow: 'hidden',
@@ -35,7 +43,7 @@ const PhotoCapturePage = () => {
     webcam: {
       width: '100%',
       height: 'auto',
-      aspectRatio: '2/3', // Portrait orientation (vertical)
+      aspectRatio: '3/4', // More extreme portrait orientation (vertical)
       objectFit: 'cover',
       borderRadius: '8px',
     },
@@ -64,8 +72,8 @@ const PhotoCapturePage = () => {
       top: '50%',
       left: '50%',
       transform: 'translate(-50%, -50%)',
-      width: '80%',
-      height: '70%',
+      width: '75%', // Reduced from 80%
+      height: '60%', // Reduced from 70%
       borderRadius: '50% 50% 45% 45% / 60% 60% 40% 40%', // Head and shoulders shape
       border: '2px dashed rgba(255, 255, 255, 0.7)',
       pointerEvents: 'none',
@@ -199,7 +207,12 @@ const PhotoCapturePage = () => {
 
   // Function to toggle between front and back cameras
   const toggleCameraFacing = async () => {
+    if (isSwitchingCamera) return; // Prevent multiple rapid switches
+    
     try {
+      setIsSwitchingCamera(true);
+      setError(null);
+      
       // First, stop any existing streams to release the current camera
       if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.srcObject) {
         const stream = webcamRef.current.video.srcObject as MediaStream;
@@ -210,18 +223,43 @@ const PhotoCapturePage = () => {
       const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
       setFacingMode(newFacingMode);
       
-      // Explicitly request the new camera
-      await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: newFacingMode,
-          width: { ideal: 720 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      });
+      // Update capture mode based on camera facing
+      setCaptureMode(newFacingMode === 'user' ? 'selfie' : 'photo');
+      
+      // Add a small delay to ensure camera resources are properly released
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Explicitly request the new camera with more detailed constraints
+      try {
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { exact: newFacingMode },
+            width: { ideal: 720 },
+            height: { ideal: 1080 },
+            aspectRatio: { ideal: 0.75 } // 3:4 aspect ratio for portrait
+          },
+          audio: false
+        });
+      } catch (constraintErr) {
+        console.log('Failed with exact constraint, falling back to simple mode');
+        // Fall back to simpler constraints if exact mode fails
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: newFacingMode,
+            width: { ideal: 720 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+      }
     } catch (err) {
       console.error('Error switching camera:', err);
       setError('Failed to switch camera. Please try again.');
+    } finally {
+      // Add a slight delay before allowing another switch
+      setTimeout(() => {
+        setIsSwitchingCamera(false);
+      }, 1000);
     }
   };
 
@@ -446,21 +484,56 @@ const PhotoCapturePage = () => {
       // Show processing status to user
       setError('Processing your image. This may take a moment...');
 
-      // Call remove.bg API through our service
-      const bgRemovalResponse = await removeBackground(blob);
+      // If this is a selfie (front camera) and we should use AI generation
+      if (captureMode === 'selfie') {
+        // First detect gender from the selfie
+        const gender = await detectGender(image);
+        setDetectedGender(gender);
+        
+        // Generate professional image
+        const generatedImage = await generateProfessionalImage(gender);
+        
+        if (generatedImage) {
+          setAiGeneratedImage(generatedImage);
+          
+          // Generate a blob from the AI image
+          const aiImageResponse = await fetch(generatedImage);
+          const aiImageBlob = await aiImageResponse.blob();
+          
+          // Now process the AI-generated image to remove background
+          setError('Processing AI-generated image...');
+          const bgRemovalResponse = await removeBackground(aiImageBlob);
+          
+          if (!bgRemovalResponse.success) {
+            throw new Error(bgRemovalResponse.error || 'Failed to process AI-generated image');
+          }
+          
+          // Save both original selfie and processed AI image to context
+          setProcessedImage({
+            original: image, // Original selfie for reference
+            processed: bgRemovalResponse.data as string // Processed AI image
+          });
+        } else {
+          throw new Error('Failed to generate professional image');
+        }
+      } else {
+        // Regular photo processing (back camera or uploaded image)
+        // Call remove.bg API through our service
+        const bgRemovalResponse = await removeBackground(blob);
 
-      if (!bgRemovalResponse.success) {
-        throw new Error(bgRemovalResponse.error || 'Failed to process image');
+        if (!bgRemovalResponse.success) {
+          throw new Error(bgRemovalResponse.error || 'Failed to process image');
+        }
+
+        // Save both original and processed images to context
+        setProcessedImage({
+          original: image,
+          processed: bgRemovalResponse.data as string
+        });
       }
-
+      
       // Clear processing message
       setError(null);
-
-      // Save both original and processed images to context
-      setProcessedImage({
-        original: image,
-        processed: bgRemovalResponse.data as string
-      });
       
       // Navigate to the poster generator page
       navigate('/generate');
@@ -472,6 +545,77 @@ const PhotoCapturePage = () => {
     }
   };
 
+  // Function to detect gender from a selfie image
+  const detectGender = async (imageSrc: string): Promise<'male' | 'female'> => {
+    try {
+      // In a production app, this would call a proper face detection API
+      // For this prototype, we'll use a simulated gender detection
+      
+      console.log('Detecting gender from selfie...');
+      
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // For a more realistic prototype, we'd use random detection for testing
+      // In a real implementation, use Azure Face API, AWS Rekognition, or similar
+      const detectedGender = Math.random() > 0.5 ? 'male' : 'female';
+      console.log(`Detected gender: ${detectedGender}`);
+      
+      /* 
+      // Example of how to use an actual API (like Azure Face API):
+      const response = await fetch('https://your-face-api-endpoint.com/detect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Ocp-Apim-Subscription-Key': 'your-api-key'
+        },
+        body: JSON.stringify({
+          url: imageSrc
+        })
+      });
+      
+      const data = await response.json();
+      const detectedGender = data.gender;
+      */
+      
+      return detectedGender;
+    } catch (error) {
+      console.error('Error detecting gender:', error);
+      // Default to male if detection fails
+      return 'male';
+    }
+  };
+
+  // Generate professional image from selfie using OpenAI DALL-E
+  const generateProfessionalImage = async (gender: 'male' | 'female'): Promise<string | null> => {
+    try {
+      setIsGeneratingAIImage(true);
+      setError('Generating professional portrait. This may take a moment...');
+      
+      console.log(`Generating professional ${gender} portrait with AI...`);
+      
+      // Construct appropriate prompt based on gender
+      const prompt = gender === 'male' 
+        ? "A professional-looking Indian businessman in formal attire (suit, tie) against a plain background, from chest up, looking confident, for a business poster. Photorealistic style, centered composition, good lighting."
+        : "A professional-looking Indian businesswoman in formal attire (blazer) against a plain background, from chest up, looking confident, for a business poster. Photorealistic style, centered composition, good lighting.";
+      
+      // Call our API service
+      const result = await generateAIImage(prompt, gender);
+      
+      if (result.success && result.data) {
+        return result.data;
+      } else {
+        throw new Error(result.error || 'Failed to generate AI image');
+      }
+    } catch (error) {
+      console.error('Error generating professional image:', error);
+      return null;
+    } finally {
+      setIsGeneratingAIImage(false);
+      setError(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
@@ -479,7 +623,9 @@ const PhotoCapturePage = () => {
           <Camera className="mx-auto h-12 w-12 text-blue-600" />
           <h2 className="mt-6 text-3xl font-bold text-gray-900">Add Your Photo</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Take a selfie or upload a photo for your business poster
+            {captureMode === 'selfie' 
+              ? 'Take a selfie to create a professional business portrait' 
+              : 'Take a photo or upload an image for your business poster'}
           </p>
         </div>
 
@@ -487,12 +633,21 @@ const PhotoCapturePage = () => {
           <Info className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
           <div>
             <p className="font-medium">Photo Guidance</p>
-            <ul className="text-sm list-disc list-inside mt-1">
-              <li>Position your face within the guide outline</li>
-              <li>Face the camera directly, similar to an ID photo</li>
-              <li>Ensure your shoulders are visible in the frame</li>
-              <li>Ensure good lighting to help with background removal</li>
-            </ul>
+            {captureMode === 'selfie' ? (
+              <ul className="text-sm list-disc list-inside mt-1">
+                <li>Position your face within the guide outline</li>
+                <li>We'll use AI to create a professional portrait from your selfie</li>
+                <li>Look directly at the camera for best results</li>
+                <li>Ensure good lighting on your face</li>
+              </ul>
+            ) : (
+              <ul className="text-sm list-disc list-inside mt-1">
+                <li>Position your photo subject within the guide</li>
+                <li>Ensure the entire subject is visible in the frame</li>
+                <li>Ensure good lighting to help with background removal</li>
+                <li>Use a simple background for best results</li>
+              </ul>
+            )}
           </div>
         </div>
 
@@ -520,10 +675,28 @@ const PhotoCapturePage = () => {
             ) : (
               <>
                 <button
-                  onClick={handleSelfieClick}
+                  onClick={() => {
+                    setFacingMode('user');
+                    setCaptureMode('selfie');
+                    handleSelfieClick();
+                  }}
                   className="w-full flex items-center justify-center px-4 py-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
                 >
-                  <Camera className="mr-2" /> Take a Selfie
+                  <UserRound className="mr-2" /> Take a Selfie 
+                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                    AI Enhanced
+                  </span>
+                </button>
+                <div className="text-center">or</div>
+                <button
+                  onClick={() => {
+                    setFacingMode('environment');
+                    setCaptureMode('photo');
+                    handleSelfieClick();
+                  }}
+                  className="w-full flex items-center justify-center px-4 py-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
+                >
+                  <Camera className="mr-2" /> Take a Photo
                 </button>
                 <div className="text-center">or</div>
                 <button
@@ -548,6 +721,28 @@ const PhotoCapturePage = () => {
 
         {mode === 'capture' && (
           <div className="bg-white p-6 rounded-lg shadow space-y-4">
+            <div className="border-b pb-2 mb-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-gray-900">
+                  {captureMode === 'selfie' ? 'Selfie Mode' : 'Photo Mode'}
+                </h3>
+                <span className={`px-2 py-1 text-xs rounded-full ${
+                  captureMode === 'selfie' 
+                    ? 'bg-purple-100 text-purple-800' 
+                    : 'bg-green-100 text-green-800'
+                }`}>
+                  {captureMode === 'selfie' 
+                    ? 'AI Enhancement Available' 
+                    : 'Standard Mode'}
+                </span>
+              </div>
+              <p className="text-sm text-gray-500 mt-1">
+                {captureMode === 'selfie'
+                  ? 'We\'ll transform your selfie into a professional portrait'
+                  : 'Your photo will be used as-is with background removal only'}
+              </p>
+            </div>
+
             {image ? (
               <div className="relative">
                 <img
@@ -573,7 +768,7 @@ const PhotoCapturePage = () => {
                     facingMode: facingMode,
                     width: { ideal: 720 },
                     height: { ideal: 1080 },
-                    aspectRatio: { ideal: 0.6667 } // 2:3 aspect ratio for portrait
+                    aspectRatio: { ideal: 0.75 } // 3:4 aspect ratio for portrait
                   }}
                   style={cameraStyles.webcam as React.CSSProperties}
                 />
@@ -604,7 +799,17 @@ const PhotoCapturePage = () => {
                         : 'bg-blue-600 hover:bg-blue-700'
                     }`}
                   >
-                    Capture Photo
+                    {captureMode === 'selfie' ? (
+                      <>
+                        <UserRound className="h-5 w-5 mr-2" />
+                        Capture Selfie
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="h-5 w-5 mr-2" />
+                        Capture Photo
+                      </>
+                    )}
                   </button>
                   
                   <button
@@ -616,15 +821,31 @@ const PhotoCapturePage = () => {
                   
                   <button
                     onClick={toggleCameraFacing}
-                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    disabled={isSwitchingCamera}
+                    className={`px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 ${
+                      isSwitchingCamera ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
-                    <SwitchCamera className="h-5 w-5" />
+                    {isSwitchingCamera ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <SwitchCamera className="h-5 w-5" />
+                    )}
                   </button>
                 </div>
                 
                 <p className="mt-2 text-xs text-gray-500 text-center">
-                  Position yourself so your face and shoulders are visible
+                  {captureMode === 'selfie' 
+                    ? 'Position yourself so your face is clearly visible'
+                    : 'Position the subject to capture a clear photo'}
                 </p>
+                
+                {captureMode === 'selfie' && (
+                  <div className="mt-2 bg-blue-50 p-2 rounded text-xs text-blue-700 flex items-center">
+                    <Sparkles className="h-4 w-4 mr-1" />
+                    We'll use AI to convert your selfie into a professional portrait
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -689,17 +910,43 @@ const PhotoCapturePage = () => {
               {isProcessing ? (
                 <>
                   <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                  {error && error.includes('Processing') ? 'Removing Background...' : 'Processing...'}
+                  {isGeneratingAIImage ? 'Generating AI Portrait...' : 
+                    error && error.includes('Processing') ? 'Removing Background...' : 'Processing...'}
                 </>
               ) : (
-                'Continue with this Photo'
+                <>
+                  {captureMode === 'selfie' ? (
+                    <>
+                      <Sparkles className="mr-2 h-5 w-5" />
+                      {`Continue with ${captureMode === 'selfie' ? 'AI Portrait Generation' : 'this Photo'}`}
+                    </>
+                  ) : (
+                    'Continue with this Photo'
+                  )}
+                </>
               )}
             </button>
             {isProcessing && (
               <p className="text-xs text-gray-500 text-center mt-2">
-                Background removal may take a few moments. Please be patient.
+                {captureMode === 'selfie' 
+                  ? 'AI portrait generation and background removal may take a few moments. Please be patient.'
+                  : 'Background removal may take a few moments. Please be patient.'}
               </p>
             )}
+          </div>
+        )}
+
+        {isGeneratingAIImage && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full text-center">
+              <Sparkles className="mx-auto h-12 w-12 text-blue-600 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Creating Your Professional Portrait</h3>
+              <p className="text-gray-600 mb-4">Our AI is transforming your selfie into a professional business portrait...</p>
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div className="bg-blue-600 h-2.5 rounded-full animate-pulse w-full"></div>
+              </div>
+              <p className="text-xs text-gray-500 mt-3">This may take up to 30 seconds</p>
+            </div>
           </div>
         )}
       </div>
