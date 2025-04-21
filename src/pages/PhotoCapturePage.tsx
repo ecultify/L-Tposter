@@ -496,10 +496,10 @@ const PhotoCapturePage = () => {
       // If this is a selfie (front camera) and we should use AI generation
       if (captureMode === 'selfie') {
         try {
-          // Set the AI generation flag to show the loading UI
+          // Step 1: Set the AI generation flag to show the loading UI
           setIsGeneratingAIImage(true);
           
-          // First remove the background from the selfie
+          // Step 2: First remove the background from the selfie
           setError('Removing background from selfie...');
           const backgroundRemovedResponse = await removeBackground(blob);
           
@@ -510,11 +510,15 @@ const PhotoCapturePage = () => {
           // Get the background-removed image URL
           const bgRemovedImageUrl = backgroundRemovedResponse.data as string;
           
-          // Now create a professional body shot using OpenAI
+          // For testing/debugging only - store the bg-removed image temporarily
+          setAiGeneratedImage(bgRemovedImageUrl);
+          
+          // Step 3: Now create a professional body shot using OpenAI
           setError('Creating professional body shot...');
           const bodyShot = await createProfessionalBodyShot(bgRemovedImageUrl);
           
           if (!bodyShot.success) {
+            console.error('Failed to create professional body shot:', bodyShot.error);
             // If body shot generation fails, still use the background-removed image
             setProcessedImage({
               original: image,
@@ -522,6 +526,7 @@ const PhotoCapturePage = () => {
             });
           } else {
             // Save both original selfie and processed body shot
+            setAiGeneratedImage(bodyShot.data as string);
             setProcessedImage({
               original: image,
               processed: bodyShot.data as string
@@ -906,7 +911,7 @@ const PhotoCapturePage = () => {
                   {captureMode === 'selfie' && (
                     <div className="mt-2 bg-blue-50 p-2 rounded text-xs text-blue-700 flex items-center">
                       <Sparkles className="h-4 w-4 mr-1" />
-                      We'll create a professional body shot from your selfie
+                      We'll remove the background and create a professional portrait
                     </div>
                   )}
                 </div>
@@ -980,7 +985,7 @@ const PhotoCapturePage = () => {
               {isProcessing ? (
                 <>
                   <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                  {error && error.includes('Creating professional') ? 'Creating Body Shot...' :
+                  {error && error.includes('Creating professional') ? 'Creating AI Portrait...' :
                     error && error.includes('Removing background') ? 'Removing Background...' : 
                     'Processing...'}
                 </>
@@ -989,7 +994,7 @@ const PhotoCapturePage = () => {
                   {captureMode === 'selfie' ? (
                     <>
                       <Sparkles className="mr-2 h-5 w-5" />
-                      Create Professional Body Shot
+                      Process Selfie with AI
                     </>
                   ) : (
                     'Continue with this Photo'
@@ -1000,7 +1005,7 @@ const PhotoCapturePage = () => {
             {isProcessing && (
               <p className="text-xs text-gray-500 text-center mt-2">
                 {captureMode === 'selfie' 
-                  ? "We'll remove the background and create a professional body shot. This may take up to a minute."
+                  ? "We'll remove the background and create a professional portrait. This may take up to a minute."
                   : 'Background removal may take a few moments. Please be patient.'}
               </p>
             )}
@@ -1008,7 +1013,7 @@ const PhotoCapturePage = () => {
         )}
 
         {isGeneratingAIImage && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full text-center">
               <Loader2 className="mx-auto h-12 w-12 text-blue-600 mb-4 animate-spin" />
               <h3 className="text-lg font-semibold mb-2">
@@ -1018,13 +1023,24 @@ const PhotoCapturePage = () => {
               </h3>
               <p className="text-gray-600 mb-4">
                 {error && error.includes('Creating professional') ? 
-                  "We're transforming your selfie into a professional full-body portrait..." : 
+                  "We're using AI to create a professional portrait. This takes longer..." : 
                   "We're preparing your image by removing the background..."}
               </p>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div className="bg-blue-600 h-2.5 rounded-full animate-pulse w-full"></div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                <div 
+                  className="bg-blue-600 h-2.5 rounded-full animate-pulse" 
+                  style={{ 
+                    width: error && error.includes('Creating professional') ? '80%' : '40%',
+                    transition: 'width 0.5s ease-in-out'
+                  }}
+                ></div>
               </div>
-              <p className="text-xs text-gray-500 mt-3">This may take up to 30 seconds</p>
+              <p className="text-xs text-blue-600 font-medium mb-3">
+                {error && error.includes('Creating professional') ? 
+                  'Step 2 of 2: AI Portrait Generation' : 
+                  'Step 1 of 2: Background Removal'}
+              </p>
+              <p className="text-xs text-gray-500">This two-step process may take up to a minute</p>
             </div>
           </div>
         )}
