@@ -19,6 +19,7 @@ const PhotoCapturePage = () => {
   const [imageQualityWarning, setImageQualityWarning] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isMobile, setIsMobile] = useState<boolean>(false);
+  const [isCameraReady, setIsCameraReady] = useState<boolean>(false);
 
   // Redirect if not verified
   useEffect(() => {
@@ -26,6 +27,13 @@ const PhotoCapturePage = () => {
       navigate('/');
     }
   }, [isVerified, userData.phoneNumber, navigate]);
+
+  // Reset camera ready state when camera mode changes
+  useEffect(() => {
+    if (mode === 'capture') {
+      setIsCameraReady(false);
+    }
+  }, [mode, facingMode]);
 
   // Check if device has a camera
   useEffect(() => {
@@ -353,7 +361,36 @@ const PhotoCapturePage = () => {
 
   // Function to toggle between front and back cameras
   const toggleCameraFacing = () => {
+    setIsCameraReady(false); // Reset camera ready status
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+    
+    // Force webcam to reconnect with new facing mode
+    if (webcamRef.current) {
+      // Small delay to ensure state updates before reconnecting
+      setTimeout(() => {
+        if (webcamRef.current) {
+          // Attempt to reset the connection
+          const video = webcamRef.current.video;
+          if (video && video.srcObject) {
+            const stream = video.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+          }
+        }
+      }, 300);
+    }
+  };
+
+  // Function to handle webcam ready state
+  const handleUserMedia = () => {
+    setIsCameraReady(true);
+    setError(null);
+  };
+
+  // Function to handle webcam errors
+  const handleWebcamError = (error: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    console.error('Webcam error:', error);
+    setError('Could not access camera. Please check camera permissions or try uploading a photo instead.');
+    setHasCamera(false);
   };
 
   return (
@@ -449,6 +486,14 @@ const PhotoCapturePage = () => {
             ) : (
               <div className="relative">
                 <div className="aspect-[3/4] mx-auto relative max-w-md">
+                  {!isCameraReady && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-800 rounded-lg z-10">
+                      <div className="text-center">
+                        <Loader2 className="mx-auto h-8 w-8 text-blue-600 animate-spin" />
+                        <p className="mt-2 text-sm text-white">Starting camera...</p>
+                      </div>
+                    </div>
+                  )}
                   <Webcam
                     audio={false}
                     ref={webcamRef}
@@ -459,24 +504,33 @@ const PhotoCapturePage = () => {
                       height: { ideal: 1920 }
                     }}
                     className="w-full h-full rounded-lg object-cover"
+                    onUserMedia={handleUserMedia}
+                    onError={handleWebcamError}
                   />
                   {/* Body silhouette guide overlay */}
                   <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <svg width="80%" height="90%" viewBox="0 0 200 400" className="text-white opacity-30">
+                    <svg width="80%" height="90%" viewBox="0 0 200 400" className="text-white opacity-50">
                       {/* Head */}
-                      <circle cx="100" cy="70" r="40" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="5,5" />
+                      <circle cx="100" cy="70" r="40" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="5,5" />
                       {/* Shoulders and body shape */}
                       <path d="M 60,120 C 60,150 60,180 60,220 C 60,280 140,280 140,220 C 140,180 140,150 140,120" 
-                        fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="5,5" />
+                        fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="5,5" />
                       {/* Center line for alignment */}
-                      <line x1="100" y1="0" x2="100" y2="400" stroke="currentColor" strokeWidth="1" strokeDasharray="5,5" />
+                      <line x1="100" y1="0" x2="100" y2="400" stroke="currentColor" strokeWidth="2" strokeDasharray="5,5" />
                     </svg>
                   </div>
                   
                   {/* Position guidance message */}
-                  <div className="absolute top-2 left-0 right-0 text-center bg-black bg-opacity-50 text-white py-1 text-sm rounded">
+                  <div className="absolute top-2 left-0 right-0 text-center bg-black bg-opacity-70 text-white py-2 text-sm rounded-t">
                     Position your {facingMode === 'user' ? 'face' : 'subject'} within the outline
                   </div>
+                  
+                  {/* Camera troubleshooting hint */}
+                  {isCameraReady && isMobile && (
+                    <div className="absolute bottom-2 left-0 right-0 text-center bg-black bg-opacity-70 text-white py-1 text-xs rounded-b">
+                      Not seeing video? Try tapping the switch camera button
+                    </div>
+                  )}
                 </div>
                 
                 {isMobile ? (
