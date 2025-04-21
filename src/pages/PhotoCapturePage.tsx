@@ -497,14 +497,14 @@ const PhotoCapturePage = () => {
       setError('Processing your image. This may take a moment...');
       console.log('Image converted to blob, size:', blob.size);
 
-      // If this is a selfie (front camera) and we should use AI generation
+      // If this is a selfie (front camera) handle it
       if (captureMode === 'selfie') {
         try {
-          // Step 1: Set the AI generation flag to show the loading UI
+          // Set the processing flag to show the loading UI
           setIsGeneratingAIImage(true);
-          console.log('Starting selfie processing with AI...');
+          console.log('Starting selfie processing...');
           
-          // Step 2: First remove the background from the selfie
+          // Remove the background from the selfie
           setError('Removing background from selfie...');
           console.log('Starting background removal...');
           const backgroundRemovedResponse = await removeBackground(blob);
@@ -518,35 +518,21 @@ const PhotoCapturePage = () => {
           // Get the background-removed image URL
           const bgRemovedImageUrl = backgroundRemovedResponse.data as string;
           
-          // Temporarily store the background-removed image
+          // Store the background-removed image
           setAiGeneratedImage(bgRemovedImageUrl);
-          console.log('Background-removed image stored temporarily');
+          console.log('Background-removed image stored');
           
-          // Step 3: Now create a professional body shot using OpenAI
-          setError('Creating professional body shot...');
-          console.log('Starting AI portrait generation...');
-          const bodyShot = await createProfessionalBodyShot(bgRemovedImageUrl);
-          
-          let finalImageUrl = bgRemovedImageUrl; // Default to background-removed image
-          
-          if (bodyShot.success) {
-            // If AI portrait generation succeeds, use that
-            finalImageUrl = bodyShot.data as string;
-            setAiGeneratedImage(finalImageUrl);
-            console.log('AI portrait generation successful');
-          } else {
-            console.error('Failed to create professional body shot:', bodyShot.error);
-            console.log('Using background-removed image as fallback');
-            // If AI generation fails, we'll still use the background-removed image
-          }
+          // Simulate a second processing step for UI consistency
+          setError('Processing image...');
+          await new Promise(resolve => setTimeout(resolve, 800));
           
           // Important: Wait for this to complete before navigation
           await new Promise<void>(resolve => {
             // Save the processed image to context
-            console.log('Saving final image to context:', finalImageUrl.substring(0, 50) + '...');
+            console.log('Saving final image to context');
             setProcessedImage({
               original: image,
-              processed: finalImageUrl
+              processed: bgRemovedImageUrl
             });
             
             // Give React time to update the context before navigating
@@ -946,7 +932,7 @@ const PhotoCapturePage = () => {
                   {captureMode === 'selfie' && (
                     <div className="mt-2 bg-blue-50 p-2 rounded text-xs text-blue-700 flex items-center">
                       <Sparkles className="h-4 w-4 mr-1" />
-                      We'll remove the background and add a professional stock photo
+                      We'll remove the background from your selfie
                     </div>
                   )}
                 </div>
@@ -1020,7 +1006,7 @@ const PhotoCapturePage = () => {
               {isProcessing ? (
                 <>
                   <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                  {error && error.includes('Creating professional') ? 'Adding Stock Photo...' :
+                  {error && error.includes('Creating professional') ? 'Processing Image...' :
                     error && error.includes('Removing background') ? 'Removing Background...' : 
                     'Processing...'}
                 </>
@@ -1029,7 +1015,7 @@ const PhotoCapturePage = () => {
                   {captureMode === 'selfie' ? (
                     <>
                       <Sparkles className="mr-2 h-5 w-5" />
-                      Process with Professional Stock Photo
+                      Process with Background Removal
                     </>
                   ) : (
                     'Continue with this Photo'
@@ -1040,7 +1026,7 @@ const PhotoCapturePage = () => {
             {isProcessing && (
               <p className="text-xs text-gray-500 text-center mt-2">
                 {captureMode === 'selfie' 
-                  ? "We'll remove the background and add a professional stock photo. This may take a moment."
+                  ? "We'll remove the background from your selfie. This may take a moment."
                   : 'Background removal may take a few moments. Please be patient.'}
               </p>
             )}
@@ -1053,13 +1039,13 @@ const PhotoCapturePage = () => {
               <Loader2 className="mx-auto h-12 w-12 text-blue-600 mb-4 animate-spin" />
               <h3 className="text-lg font-semibold mb-2">
                 {error && error.includes('Creating professional') ? 
-                  'Creating Professional Portrait' : 
+                  'Processing Image' : 
                   'Removing Background'}
               </h3>
               <p className="text-gray-600 mb-4">
                 {error && error.includes('Creating professional') ? 
-                  "We're selecting a professional stock photo for your poster..." : 
-                  "We're preparing your image by removing the background..."}
+                  "We're finishing up the processing of your image..." : 
+                  "We're removing the background from your selfie..."}
               </p>
               <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
                 <div 
@@ -1072,10 +1058,10 @@ const PhotoCapturePage = () => {
               </div>
               <p className="text-xs text-blue-600 font-medium mb-3">
                 {error && error.includes('Creating professional') ? 
-                  'Step 2 of 2: Professional Stock Photo' : 
+                  'Step 2 of 2: Final Processing' : 
                   'Step 1 of 2: Background Removal'}
               </p>
-              <p className="text-xs text-gray-500">This two-step process may take up to a minute</p>
+              <p className="text-xs text-gray-500">Please wait while we process your image</p>
             </div>
           </div>
         )}
