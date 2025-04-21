@@ -405,14 +405,17 @@ const PhotoCapturePage = () => {
   };
 
   // Function to handle webcam ready state
-  const handleUserMedia = () => {
-    console.log('Camera stream connected successfully');
+  const handleUserMedia = (stream: MediaStream) => {
+    console.log('Camera stream connected successfully:', stream.getVideoTracks().map(track => ({
+      label: track.label,
+      settings: track.getSettings()
+    })));
     setIsCameraReady(true);
     setError(null);
   };
 
   // Function to handle webcam errors
-  const handleWebcamError = (error: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+  const handleWebcamError = (error: string | DOMException) => {
     console.error('Webcam component error:', error);
     setError('Camera could not be initialized. You may need to grant camera permissions or try a different browser.');
     setIsCameraReady(false);
@@ -530,7 +533,7 @@ const PhotoCapturePage = () => {
                     }}
                     className="w-full h-full rounded-lg object-cover"
                     onUserMedia={handleUserMedia}
-                    onError={handleWebcamError}
+                    onUserMediaError={handleWebcamError}
                     mirrored={facingMode === 'user'}
                     forceScreenshotSourceSize={true}
                     screenshotQuality={0.92}
