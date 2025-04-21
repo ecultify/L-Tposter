@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { Camera, Upload, RefreshCw, Loader2, AlertCircle, Info, SwitchCamera, Sparkles, User, UserRound } from 'lucide-react';
 import { useFormData } from '../context/FormDataContext';
-import { removeBackground, generateAIImage } from '../services/api';
+import { removeBackground, generateAIImage, createProfessionalBodyShot } from '../services/api';
 
 const PhotoCapturePage = () => {
   const navigate = useNavigate();
@@ -500,20 +500,33 @@ const PhotoCapturePage = () => {
           setIsGeneratingAIImage(true);
           
           // First remove the background from the selfie
+          setError('Removing background from selfie...');
           const backgroundRemovedResponse = await removeBackground(blob);
           
           if (!backgroundRemovedResponse.success) {
             throw new Error(backgroundRemovedResponse.error || 'Failed to remove background from selfie');
           }
           
-          // Use the background-removed image directly
-          const processedImageUrl = backgroundRemovedResponse.data as string;
+          // Get the background-removed image URL
+          const bgRemovedImageUrl = backgroundRemovedResponse.data as string;
           
-          // Save both original selfie and processed image to context
-          setProcessedImage({
-            original: image, // Original selfie for reference
-            processed: processedImageUrl // Background removed selfie
-          });
+          // Now create a professional body shot using OpenAI
+          setError('Creating professional body shot...');
+          const bodyShot = await createProfessionalBodyShot(bgRemovedImageUrl);
+          
+          if (!bodyShot.success) {
+            // If body shot generation fails, still use the background-removed image
+            setProcessedImage({
+              original: image,
+              processed: bgRemovedImageUrl
+            });
+          } else {
+            // Save both original selfie and processed body shot
+            setProcessedImage({
+              original: image,
+              processed: bodyShot.data as string
+            });
+          }
         } finally {
           // Make sure to reset the AI generation flag
           setIsGeneratingAIImage(false);
@@ -566,6 +579,89 @@ const PhotoCapturePage = () => {
       return () => clearInterval(checkVideoPlaying);
     }
   }, [mode]);
+
+  // Add a component for photo requirements with visual examples
+  const PhotoRequirements = () => (
+    <div className="mt-4 bg-gray-50 border border-gray-200 rounded-lg p-3">
+      <h4 className="font-medium text-sm mb-2 text-gray-700 flex items-center">
+        <Info className="h-4 w-4 mr-1 text-blue-500" />
+        Photo Requirements
+      </h4>
+      
+      <div className="flex flex-col sm:flex-row gap-4 mb-3">
+        <div className="flex-1 text-center">
+          <div className="border border-green-500 rounded-lg p-1 mb-1 bg-white">
+            <img 
+              src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=faces" 
+              alt="Good example" 
+              className="w-full h-auto rounded object-cover aspect-square"
+            />
+          </div>
+          <span className="text-xs text-green-600 font-medium flex items-center justify-center">
+            <span className="bg-green-100 text-green-700 rounded-full w-4 h-4 inline-flex items-center justify-center mr-1">✓</span>
+            Good photo
+          </span>
+        </div>
+        
+        <div className="flex-1 text-center">
+          <div className="border border-red-500 rounded-lg p-1 mb-1 bg-white">
+            <img 
+              src="https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=200&h=200&fit=crop" 
+              alt="Bad example" 
+              className="w-full h-auto rounded object-cover aspect-square"
+            />
+          </div>
+          <span className="text-xs text-red-600 font-medium flex items-center justify-center">
+            <span className="bg-red-100 text-red-700 rounded-full w-4 h-4 inline-flex items-center justify-center mr-1">✗</span>
+            Bad photo
+          </span>
+        </div>
+      </div>
+      
+      <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside">
+        <li>Face should be clearly visible and well-lit</li>
+        <li>Use a plain or simple background if possible</li>
+        <li>Look directly at the camera with neutral expression</li>
+        <li>Avoid wearing hats, sunglasses or heavy accessories</li>
+        <li>Ensure your face takes up at least 60% of the frame</li>
+      </ul>
+      
+      <div className="flex justify-between mt-3 text-xs">
+        <div className="flex flex-col items-center">
+          <div className="bg-green-100 rounded-lg p-1 w-14 h-14 flex items-center justify-center mb-1">
+            <img 
+              src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop&crop=faces" 
+              alt="Well lit" 
+              className="w-full h-full object-cover rounded"
+            />
+          </div>
+          <span className="text-green-600">Well lit</span>
+        </div>
+        
+        <div className="flex flex-col items-center">
+          <div className="bg-green-100 rounded-lg p-1 w-14 h-14 flex items-center justify-center mb-1">
+            <img 
+              src="https://images.unsplash.com/photo-1542909168-82c3e7fdca5c?w=100&h=100&fit=crop&crop=faces" 
+              alt="Neutral expression" 
+              className="w-full h-full object-cover rounded"
+            />
+          </div>
+          <span className="text-green-600">Neutral</span>
+        </div>
+        
+        <div className="flex flex-col items-center">
+          <div className="bg-green-100 rounded-lg p-1 w-14 h-14 flex items-center justify-center mb-1">
+            <img 
+              src="https://images.unsplash.com/photo-1504257432389-52343af06ae3?w=100&h=100&fit=crop&crop=faces" 
+              alt="Plain background" 
+              className="w-full h-full object-cover rounded"
+            />
+          </div>
+          <span className="text-green-600">Plain BG</span>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -665,6 +761,8 @@ const PhotoCapturePage = () => {
                   className="hidden"
                   onChange={handleFileUpload}
                 />
+
+                <PhotoRequirements />
               </>
             )}
           </div>
@@ -710,107 +808,111 @@ const PhotoCapturePage = () => {
                 </button>
               </div>
             ) : (
-              <div style={cameraStyles.container as React.CSSProperties}>
-                {/* Camera loading indicator */}
-                <div style={cameraStyles.cameraLoadingIndicator as React.CSSProperties}>
-                  <Loader2 className="mx-auto h-8 animate-spin mb-2" />
-                  <p>Activating camera...</p>
-                </div>
-                
-                <Webcam
-                  audio={false}
-                  ref={webcamRef}
-                  screenshotFormat="image/jpeg"
-                  videoConstraints={{ 
-                    facingMode: facingMode,
-                    width: { ideal: 720 },
-                    height: { ideal: 1080 },
-                    aspectRatio: { ideal: 0.75 } // 3:4 aspect ratio for portrait
-                  }}
-                  style={cameraStyles.webcam as React.CSSProperties}
-                  onUserMedia={() => {
-                    // Hide the loading indicator when camera is ready
-                    const loadingIndicator = document.querySelector('[style*="cameraLoadingIndicator"]');
-                    if (loadingIndicator) {
-                      (loadingIndicator as HTMLElement).style.display = 'none';
-                    }
-                  }}
-                />
-                
-                {showGuidelines && (
-                  <div style={cameraStyles.positionOverlay as React.CSSProperties}>
-                    <div style={cameraStyles.silhouette as React.CSSProperties}></div>
-                    <div 
-                      style={{
-                        ...cameraStyles.statusIndicator as React.CSSProperties,
-                        ...(isWellPositioned 
-                          ? cameraStyles.wellPositioned 
-                          : cameraStyles.notPositioned) as React.CSSProperties
-                      }}
-                    >
-                      {isWellPositioned ? 'Well Positioned!' : 'Position your face in the outline'}
+              <>
+                <div style={cameraStyles.container as React.CSSProperties}>
+                  {/* Camera loading indicator */}
+                  <div style={cameraStyles.cameraLoadingIndicator as React.CSSProperties}>
+                    <Loader2 className="mx-auto h-8 animate-spin mb-2" />
+                    <p>Activating camera...</p>
+                  </div>
+                  
+                  <Webcam
+                    audio={false}
+                    ref={webcamRef}
+                    screenshotFormat="image/jpeg"
+                    videoConstraints={{ 
+                      facingMode: facingMode,
+                      width: { ideal: 720 },
+                      height: { ideal: 1080 },
+                      aspectRatio: { ideal: 0.75 } // 3:4 aspect ratio for portrait
+                    }}
+                    style={cameraStyles.webcam as React.CSSProperties}
+                    onUserMedia={() => {
+                      // Hide the loading indicator when camera is ready
+                      const loadingIndicator = document.querySelector('[style*="cameraLoadingIndicator"]');
+                      if (loadingIndicator) {
+                        (loadingIndicator as HTMLElement).style.display = 'none';
+                      }
+                    }}
+                  />
+                  
+                  {showGuidelines && (
+                    <div style={cameraStyles.positionOverlay as React.CSSProperties}>
+                      <div style={cameraStyles.silhouette as React.CSSProperties}></div>
+                      <div 
+                        style={{
+                          ...cameraStyles.statusIndicator as React.CSSProperties,
+                          ...(isWellPositioned 
+                            ? cameraStyles.wellPositioned 
+                            : cameraStyles.notPositioned) as React.CSSProperties
+                        }}
+                      >
+                        {isWellPositioned ? 'Well Positioned!' : 'Position your face in the outline'}
+                      </div>
                     </div>
+                  )}
+                  
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      onClick={handleCapture}
+                      disabled={showGuidelines && !isWellPositioned}
+                      className={`flex-1 flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+                        showGuidelines && !isWellPositioned
+                          ? 'bg-blue-400 cursor-not-allowed'
+                          : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
+                    >
+                      {captureMode === 'selfie' ? (
+                        <>
+                          <UserRound className="h-5 w-5 mr-2" />
+                          Capture Selfie
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="h-5 w-5 mr-2" />
+                          Capture Photo
+                        </>
+                      )}
+                    </button>
+                    
+                    <button
+                      onClick={toggleGuidelines}
+                      className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      {showGuidelines ? 'Hide' : 'Show'} Guide
+                    </button>
+                    
+                    <button
+                      onClick={toggleCameraFacing}
+                      disabled={isSwitchingCamera}
+                      className={`px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 ${
+                        isSwitchingCamera ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      {isSwitchingCamera ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <SwitchCamera className="h-5 w-5" />
+                      )}
+                    </button>
                   </div>
-                )}
-                
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    onClick={handleCapture}
-                    disabled={showGuidelines && !isWellPositioned}
-                    className={`flex-1 flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                      showGuidelines && !isWellPositioned
-                        ? 'bg-blue-400 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700'
-                    }`}
-                  >
-                    {captureMode === 'selfie' ? (
-                      <>
-                        <UserRound className="h-5 w-5 mr-2" />
-                        Capture Selfie
-                      </>
-                    ) : (
-                      <>
-                        <Camera className="h-5 w-5 mr-2" />
-                        Capture Photo
-                      </>
-                    )}
-                  </button>
                   
-                  <button
-                    onClick={toggleGuidelines}
-                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                  >
-                    {showGuidelines ? 'Hide' : 'Show'} Guide
-                  </button>
+                  <p className="mt-2 text-xs text-gray-500 text-center">
+                    {captureMode === 'selfie' 
+                      ? 'Position yourself so your face is clearly visible'
+                      : 'Position the subject to capture a clear photo'}
+                  </p>
                   
-                  <button
-                    onClick={toggleCameraFacing}
-                    disabled={isSwitchingCamera}
-                    className={`px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 ${
-                      isSwitchingCamera ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    {isSwitchingCamera ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <SwitchCamera className="h-5 w-5" />
-                    )}
-                  </button>
+                  {captureMode === 'selfie' && (
+                    <div className="mt-2 bg-blue-50 p-2 rounded text-xs text-blue-700 flex items-center">
+                      <Sparkles className="h-4 w-4 mr-1" />
+                      We'll create a professional body shot from your selfie
+                    </div>
+                  )}
                 </div>
                 
-                <p className="mt-2 text-xs text-gray-500 text-center">
-                  {captureMode === 'selfie' 
-                    ? 'Position yourself so your face is clearly visible'
-                    : 'Position the subject to capture a clear photo'}
-                </p>
-                
-                {captureMode === 'selfie' && (
-                  <div className="mt-2 bg-blue-50 p-2 rounded text-xs text-blue-700 flex items-center">
-                    <Sparkles className="h-4 w-4 mr-1" />
-                    We'll remove the background from your selfie
-                  </div>
-                )}
-              </div>
+                <PhotoRequirements />
+              </>
             )}
           </div>
         )}
@@ -839,27 +941,31 @@ const PhotoCapturePage = () => {
                 </div>
               )
             ) : (
-              <div
-                className="border-2 border-dashed border-gray-300 rounded-lg px-6 py-10 text-center"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                <div className="mt-2">
-                  <span className="text-sm font-medium text-blue-600 hover:text-blue-500">
-                    Click to upload
-                  </span>
-                  <p className="text-xs text-gray-500">
-                    JPG, PNG, GIF, WebP, BMP, TIFF, SVG up to 10MB
-                  </p>
+              <>
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg px-6 py-10 text-center"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                  <div className="mt-2">
+                    <span className="text-sm font-medium text-blue-600 hover:text-blue-500">
+                      Click to upload
+                    </span>
+                    <p className="text-xs text-gray-500">
+                      JPG, PNG, GIF, WebP, BMP, TIFF, SVG up to 10MB
+                    </p>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,image/tiff,image/svg+xml"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,image/tiff,image/svg+xml"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-              </div>
+                
+                <PhotoRequirements />
+              </>
             )}
           </div>
         )}
@@ -874,15 +980,16 @@ const PhotoCapturePage = () => {
               {isProcessing ? (
                 <>
                   <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                  {isGeneratingAIImage ? 'Removing Background...' : 
-                    error && error.includes('Processing') ? 'Removing Background...' : 'Processing...'}
+                  {error && error.includes('Creating professional') ? 'Creating Body Shot...' :
+                    error && error.includes('Removing background') ? 'Removing Background...' : 
+                    'Processing...'}
                 </>
               ) : (
                 <>
                   {captureMode === 'selfie' ? (
                     <>
                       <Sparkles className="mr-2 h-5 w-5" />
-                      Continue with Background Removal
+                      Create Professional Body Shot
                     </>
                   ) : (
                     'Continue with this Photo'
@@ -893,7 +1000,7 @@ const PhotoCapturePage = () => {
             {isProcessing && (
               <p className="text-xs text-gray-500 text-center mt-2">
                 {captureMode === 'selfie' 
-                  ? 'Background removal may take a few moments. Please be patient.'
+                  ? "We'll remove the background and create a professional body shot. This may take up to a minute."
                   : 'Background removal may take a few moments. Please be patient.'}
               </p>
             )}
@@ -904,8 +1011,16 @@ const PhotoCapturePage = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full text-center">
               <Loader2 className="mx-auto h-12 w-12 text-blue-600 mb-4 animate-spin" />
-              <h3 className="text-lg font-semibold mb-2">Removing Background</h3>
-              <p className="text-gray-600 mb-4">We're preparing your image by removing the background...</p>
+              <h3 className="text-lg font-semibold mb-2">
+                {error && error.includes('Creating professional') ? 
+                  'Creating Professional Portrait' : 
+                  'Removing Background'}
+              </h3>
+              <p className="text-gray-600 mb-4">
+                {error && error.includes('Creating professional') ? 
+                  "We're transforming your selfie into a professional full-body portrait..." : 
+                  "We're preparing your image by removing the background..."}
+              </p>
               <div className="w-full bg-gray-200 rounded-full h-2.5">
                 <div className="bg-blue-600 h-2.5 rounded-full animate-pulse w-full"></div>
               </div>
