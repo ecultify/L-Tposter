@@ -28,12 +28,27 @@ const PhotoCapturePage = () => {
     }
   }, [isVerified, userData.phoneNumber, navigate]);
 
-  // Reset camera ready state when camera mode changes
+  // Reset camera ready state when camera mode changes and add timeout detection
   useEffect(() => {
     if (mode === 'capture') {
       setIsCameraReady(false);
+      console.log('Camera mode activated, initializing webcam with facing mode:', facingMode);
+      
+      // Add a timeout to detect if camera initialization is stuck
+      const cameraTimeout = setTimeout(() => {
+        if (!isCameraReady) {
+          console.warn('Camera initialization timeout - not ready after 10 seconds');
+          // Try to reset by toggling camera mode
+          if (isMobile) {
+            toggleCameraFacing();
+          }
+          setError('Camera initialization is taking too long. Try switching cameras or refreshing the page.');
+        }
+      }, 10000);
+      
+      return () => clearTimeout(cameraTimeout);
     }
-  }, [mode, facingMode]);
+  }, [mode, facingMode, isCameraReady, isMobile]);
 
   // Check if device has a camera
   useEffect(() => {
@@ -271,31 +286,40 @@ const PhotoCapturePage = () => {
     } else {
       // Try to access the camera again to ensure permissions are still valid
       setIsCheckingCamera(true);
+      console.log('Attempting to initialize camera with facing mode:', facingMode);
       
       // Explicitly request camera permissions with more detailed constraints
       const constraints = { 
         video: {
           facingMode: facingMode,
           width: { ideal: 1280 },
-          height: { ideal: 720 }
+          height: { ideal: 1920 }
         }, 
         audio: false 
       };
       
       navigator.mediaDevices.getUserMedia(constraints)
-        .then(() => {
+        .then((stream) => {
+          console.log('Camera permission granted:', stream.getVideoTracks().map(t => t.label));
+          // Release the stream to avoid conflicts with Webcam component
+          stream.getTracks().forEach(track => track.stop());
           setMode('capture');
           setIsCheckingCamera(false);
         })
         .catch((err) => {
-          console.error('Camera access error:', err);
+          console.error('Detailed camera access error:', err.name, err.message);
           // Try again with simpler constraints
+          console.log('Trying with simplified constraints');
           navigator.mediaDevices.getUserMedia({ video: true })
-            .then(() => {
+            .then((stream) => {
+              console.log('Camera access successful with basic constraints');
+              // Release the stream to avoid conflicts with Webcam component
+              stream.getTracks().forEach(track => track.stop());
               setMode('capture');
               setIsCheckingCamera(false);
             })
-            .catch(() => {
+            .catch((fallbackErr) => {
+              console.error('Fallback camera access error:', fallbackErr.name, fallbackErr.message);
               setHasCamera(false);
               setMode('upload');
               if (fileInputRef.current) {
@@ -382,15 +406,16 @@ const PhotoCapturePage = () => {
 
   // Function to handle webcam ready state
   const handleUserMedia = () => {
+    console.log('Camera stream connected successfully');
     setIsCameraReady(true);
     setError(null);
   };
 
   // Function to handle webcam errors
   const handleWebcamError = (error: React.SyntheticEvent<HTMLVideoElement, Event>) => {
-    console.error('Webcam error:', error);
-    setError('Could not access camera. Please check camera permissions or try uploading a photo instead.');
-    setHasCamera(false);
+    console.error('Webcam component error:', error);
+    setError('Camera could not be initialized. You may need to grant camera permissions or try a different browser.');
+    setIsCameraReady(false);
   };
 
   return (
@@ -506,6 +531,9 @@ const PhotoCapturePage = () => {
                     className="w-full h-full rounded-lg object-cover"
                     onUserMedia={handleUserMedia}
                     onError={handleWebcamError}
+                    mirrored={facingMode === 'user'}
+                    forceScreenshotSourceSize={true}
+                    screenshotQuality={0.92}
                   />
                   {/* Body silhouette guide overlay */}
                   <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -532,6 +560,35 @@ const PhotoCapturePage = () => {
                     </div>
                   )}
                 </div>
+                
+                {!isCameraReady && mode === 'capture' && (
+                  <div className="mt-2 flex justify-center gap-4">
+                    <button
+                      onClick={() => {
+                        console.log('Manual camera reset requested');
+                        if (isMobile) {
+                          toggleCameraFacing();
+                        } else {
+                          setMode(null);
+                          setTimeout(() => setMode('capture'), 500);
+                        }
+                      }}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800 flex items-center"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" /> Retry camera
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        console.log('Switching to upload mode from failed camera');
+                        setMode('upload');
+                      }}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800 flex items-center"
+                    >
+                      <Upload className="h-4 w-4 mr-1" /> Switch to upload
+                    </button>
+                  </div>
+                )}
                 
                 {isMobile ? (
                   <div className="flex gap-2 mt-4">
