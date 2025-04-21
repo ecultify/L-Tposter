@@ -1,49 +1,53 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Download, RefreshCw, Share2, Camera, ArrowLeft } from 'lucide-react';
+import { Download, RefreshCw, Share2, Camera, ArrowLeft, Send, CheckCircle, XCircle } from 'lucide-react';
 import type { PosterTemplate } from '../types';
+import { useFormData } from '../context/FormDataContext';
+import { submitPoster } from '../services/api';
 
-// Define the poster templates
-const templates: PosterTemplate[] = [
-  { id: '1', name: 'Modern Business', dimensions: { width: 1080, height: 1920 } },
-  { id: '2', name: 'Professional Corporate', dimensions: { width: 1080, height: 1920 } },
-  { id: '3', name: 'Creative Agency', dimensions: { width: 1080, height: 1920 } },
-];
-
-// Frame image URLs for each template
-const templateFrames = {
-  '1': 'https://images.unsplash.com/photo-1607082349566-187342175e2f?auto=format&fit=crop&w=1080&h=1920',
-  '2': 'https://images.unsplash.com/photo-1557683311-eac922347aa1?auto=format&fit=crop&w=1080&h=1920',
-  '3': 'https://images.unsplash.com/photo-1557682257-2f9c37a3a5f3?auto=format&fit=crop&w=1080&h=1920',
-};
+// Main template is the L&T image with Bumrah
+const LT_TEMPLATE_IMAGE = '/images/mage.jpg';
 
 const PosterGeneratorPage = () => {
   const navigate = useNavigate();
-  const [selectedTemplate, setSelectedTemplate] = useState<string>(templates[0].id);
-  const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
+  const { 
+    userData, 
+    processedImage, 
+    posterImage, 
+    setPosterImage,
+    clearAllData,
+    isVerified 
+  } = useFormData();
+  
+  const [generatedPoster, setGeneratedPoster] = useState<string | null>(posterImage);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [userImage, setUserImage] = useState<{ original: string; processed: string } | null>(null);
+  const [submissionStatus, setSubmissionStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  // Load user image on component mount
+  // Redirect if not verified or no processed image
   useEffect(() => {
-    const storedImages = sessionStorage.getItem('userImages');
-    
-    if (storedImages) {
-      try {
-        const parsedImages = JSON.parse(storedImages);
-        setUserImage(parsedImages);
-      } catch (err) {
-        console.error('Error parsing stored images:', err);
-        setError('Could not load your photo. Please try again.');
-      }
-    } else {
-      // If no images found, redirect back to photo page
-      setError('No photo found. Please add a photo first.');
+    if (!isVerified || !processedImage) {
+      navigate('/');
     }
-  }, []);
+  }, [isVerified, processedImage, navigate]);
 
-  const generateCompositeImage = async (templateId: string, processedImageUrl: string) => {
+  // Update local state when posterImage changes in context
+  useEffect(() => {
+    if (posterImage) {
+      setGeneratedPoster(posterImage);
+    }
+  }, [posterImage]);
+
+  // Auto-submit when poster is generated
+  useEffect(() => {
+    if (generatedPoster && submissionStatus === 'idle' && posterImage) {
+      handleSubmitPoster();
+    }
+  }, [generatedPoster, posterImage]);
+
+  const generateCompositeImage = async (processedImageUrl: string) => {
+    if (!processedImage) return;
+    
     setIsGenerating(true);
     
     try {
@@ -56,12 +60,12 @@ const PosterGeneratorPage = () => {
       }
       
       // Set canvas size to match template dimensions
-      canvas.width = 1080;
-      canvas.height = 1920;
+      canvas.width = 1040;
+      canvas.height = 1200;
       
-      // Load the frame image
-      const frameImg = new Image();
-      frameImg.crossOrigin = 'anonymous';
+      // Load the template image (L&T with Bumrah)
+      const templateImg = new Image();
+      templateImg.crossOrigin = 'anonymous';
       
       // Load the user's processed image
       const userImg = new Image();
@@ -69,37 +73,117 @@ const PosterGeneratorPage = () => {
       
       // Wait for both images to load
       await new Promise<void>((resolve, reject) => {
-        frameImg.onload = () => {
+        templateImg.onload = () => {
           userImg.onload = () => {
-            // Draw the frame on the canvas
-            ctx.drawImage(frameImg, 0, 0, canvas.width, canvas.height);
+            // Draw the template on the canvas
+            ctx.drawImage(templateImg, 0, 0, canvas.width, canvas.height);
             
-            // Calculate position to center the user image in the bottom half
+            // Calculate position to place user image to the left of Bumrah
+            // Bumrah is on the right side of the image
             const userImgWidth = userImg.width;
             const userImgHeight = userImg.height;
+            
+            // Scale user image to appropriate height (larger than before, approximately matching Bumrah's height)
             const scale = Math.min(
-              (canvas.width * 0.8) / userImgWidth,
-              (canvas.height * 0.5) / userImgHeight
+              (canvas.width * 0.55) / userImgWidth, // Increased from 0.48 to 0.55
+              (canvas.height * 0.65) / userImgHeight // Increased from 0.45 to 0.65 to match Bumrah's height
             );
             
             const scaledWidth = userImgWidth * scale;
             const scaledHeight = userImgHeight * scale;
-            const x = (canvas.width - scaledWidth) / 2;
-            const y = canvas.height - scaledHeight - (canvas.height * 0.2); // Position in bottom area
             
-            // Draw the user image on top of the frame
+            // Position image further to the left to create space between it and Bumrah
+            const x = canvas.width * 0.06 - 40; // Move 40px further to the left
+            const y = canvas.height - (scaledHeight * 0.80) - 60; // Move 60px upward
+            
+            // Draw the user image
             ctx.drawImage(userImg, x, y, scaledWidth, scaledHeight);
+            
+            // Add company info text to the canvas
+            // Using specific styling from the reference image
+            
+            // Use tagline from user data if available, otherwise use the default
+            const tagline = userData.tagline || 'Believed in myself, took the right steps, and success followed';
+            
+            // Split the tagline into multiple lines if needed
+            let taglineLines: string[] = [];
+            if (tagline.length > 40) {
+              // Break into multiple lines
+              const words = tagline.split(' ');
+              let currentLine = '';
+              
+              words.forEach((word) => {
+                if ((currentLine + word).length < 30) {
+                  currentLine += (currentLine ? ' ' : '') + word;
+                } else {
+                  taglineLines.push(currentLine);
+                  currentLine = word;
+                }
+              });
+              
+              if (currentLine) {
+                taglineLines.push(currentLine);
+              }
+            } else {
+              // Short enough for one line
+              taglineLines = [tagline];
+            }
+
+            // Inspirational message at the top (white, large, bold text)
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 56px Arial';
+            ctx.textAlign = 'left';
+            
+            taglineLines.forEach((line, index) => {
+              ctx.fillText(line, 60, canvas.height * 0.12 + (index * 80));
+            });
+            
+            // User details in the middle-left part
+            // Using a yellow/gold circle with icon and info
+            const circleY = canvas.height * 0.4;
+            
+            // Draw user icon circles (yellow background)
+            ctx.beginPath();
+            ctx.arc(80, circleY, 30, 0, 2 * Math.PI);
+            ctx.fillStyle = '#FFC72C'; // L&T Finance gold/yellow color
+            ctx.fill();
+            
+            // Draw phone icon circle
+            ctx.beginPath();
+            ctx.arc(80, circleY + 85, 30, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Draw person icon in the first circle (simplified)
+            ctx.fillStyle = 'black';
+            ctx.font = 'bold 24px Arial';
+            ctx.fillText('👤', 68, circleY + 8);
+            
+            // Draw phone icon in the second circle (simplified)
+            ctx.fillText('📞', 68, circleY + 93);
+            
+            // Draw user info text
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(userData.companyName || 'Mr. Ravi Kumar', 130, circleY - 15);
+            ctx.font = '22px Arial';
+            ctx.fillText(userData.businessType || 'Precision Manufacturing Co.', 130, circleY + 15);
+            
+            // Phone number
+            ctx.font = 'bold 28px Arial';
+            ctx.fillText(userData.phoneNumber || '8765343009', 130, circleY + 95);
             
             // Convert the composite image to data URL
             const compositeImageUrl = canvas.toDataURL('image/png');
             setGeneratedPoster(compositeImageUrl);
+            setPosterImage(compositeImageUrl);
             resolve();
           };
           userImg.onerror = reject;
           userImg.src = processedImageUrl;
         };
-        frameImg.onerror = reject;
-        frameImg.src = templateFrames[templateId as keyof typeof templateFrames];
+        templateImg.onerror = reject;
+        templateImg.src = LT_TEMPLATE_IMAGE;
       });
     } catch (err) {
       console.error('Error generating composite image:', err);
@@ -110,13 +194,13 @@ const PosterGeneratorPage = () => {
   };
 
   const handleGenerate = async () => {
-    if (!userImage) {
+    if (!processedImage) {
       setError('No photo available. Please add a photo first.');
       return;
     }
     
     try {
-      await generateCompositeImage(selectedTemplate, userImage.processed);
+      await generateCompositeImage(processedImage.processed);
     } catch (err) {
       console.error('Error in handleGenerate:', err);
       setError('Failed to generate poster. Please try again.');
@@ -133,6 +217,42 @@ const PosterGeneratorPage = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleSubmitPoster = async () => {
+    if (!generatedPoster || !userData.phoneNumber) return;
+    
+    setSubmissionStatus('loading');
+    setError(null);
+    
+    try {
+      // Convert base64/data URL to blob
+      const response = await fetch(generatedPoster);
+      const blob = await response.blob();
+      
+      // Submit poster to L&T API
+      const submitResponse = await submitPoster(blob, {
+        phoneNumber: userData.phoneNumber,
+        companyName: userData.companyName,
+        email: userData.email
+      });
+      
+      if (!submitResponse.success) {
+        throw new Error(submitResponse.error || 'Failed to submit poster to L&T');
+      }
+      
+      setSubmissionStatus('success');
+      setError('Poster successfully submitted to L&T Finance!');
+      
+      // Clear the error message after 5 seconds
+      setTimeout(() => {
+        if (setError) setError(null);
+      }, 5000);
+    } catch (err) {
+      console.error('Error submitting poster:', err);
+      setSubmissionStatus('error');
+      setError('Failed to submit poster to L&T. You can still download it.');
+    }
   };
 
   const goBackToPhotoPage = () => {
@@ -259,20 +379,36 @@ const PosterGeneratorPage = () => {
     }
   };
 
+  const resetFlow = () => {
+    clearAllData();
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <button
             onClick={goBackToPhotoPage}
             className="inline-flex items-center text-sm text-gray-700 hover:text-blue-600"
           >
             <ArrowLeft className="h-4 w-4 mr-1" /> Back to Photo
           </button>
+          
+          <button
+            onClick={resetFlow}
+            className="inline-flex items-center text-sm text-gray-700 hover:text-red-600"
+          >
+            Start Over
+          </button>
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
+          <div className={`border px-4 py-3 rounded mb-6 ${
+            error.includes('success') 
+              ? 'bg-green-50 border-green-200 text-green-700' 
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}>
             {error}
           </div>
         )}
@@ -281,33 +417,16 @@ const PosterGeneratorPage = () => {
           {/* Left Column - Controls */}
           <div className="w-full md:w-1/3 space-y-6">
             <div className="bg-white p-6 rounded-lg shadow">
-              <h2 className="text-xl font-semibold mb-4">Choose Template</h2>
-              <div className="space-y-3">
-                {templates.map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => setSelectedTemplate(template.id)}
-                    className={`w-full p-3 rounded-lg text-left ${
-                      selectedTemplate === template.id
-                        ? 'bg-blue-50 border-2 border-blue-500'
-                        : 'border-2 border-gray-200 hover:border-blue-200'
-                    }`}
-                  >
-                    <h3 className="font-medium">{template.name}</h3>
-                    <p className="text-sm text-gray-500">
-                      {template.dimensions.width} x {template.dimensions.height}px
-                    </p>
-                  </button>
-                ))}
-              </div>
+              <h2 className="text-xl font-semibold mb-4">L&T Business Loan</h2>
+              <p className="text-gray-600">Create your personalized business poster with L&T Finance. Upload your photo to appear alongside the brand ambassador.</p>
             </div>
 
             <div className="bg-white p-6 rounded-lg shadow">
               <h2 className="text-xl font-semibold mb-4">Your Photo</h2>
-              {userImage ? (
+              {processedImage ? (
                 <div className="bg-gray-100 rounded-lg overflow-hidden mb-4">
                   <img 
-                    src={userImage.processed} 
+                    src={processedImage.processed} 
                     alt="Your Processed Photo" 
                     className="w-full object-contain"
                     style={{ maxHeight: '200px' }}
@@ -318,12 +437,12 @@ const PosterGeneratorPage = () => {
                   <Camera className="h-10 w-10 text-gray-400" />
                 </div>
               )}
-              <button
+                  <button
                 onClick={goBackToPhotoPage}
                 className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
               >
                 Change Photo
-              </button>
+                  </button>
             </div>
 
             <div className="bg-white p-6 rounded-lg shadow">
@@ -331,7 +450,7 @@ const PosterGeneratorPage = () => {
               <div className="space-y-3">
                 <button
                   onClick={handleGenerate}
-                  disabled={isGenerating || !userImage}
+                  disabled={isGenerating || !processedImage}
                   className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400"
                 >
                   {isGenerating ? (
@@ -361,6 +480,42 @@ const PosterGeneratorPage = () => {
                   <Share2 className="h-5 w-5 mr-2" />
                   Share
                 </button>
+
+                <button
+                  onClick={handleSubmitPoster}
+                  disabled={!generatedPoster || submissionStatus === 'loading' || submissionStatus === 'success'}
+                  className={`w-full flex items-center justify-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium ${
+                    submissionStatus === 'success'
+                      ? 'bg-green-600 text-white border-transparent'
+                      : submissionStatus === 'error'
+                      ? 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100'
+                      : submissionStatus === 'loading'
+                      ? 'bg-gray-200 text-gray-500 border-gray-300'
+                      : 'bg-indigo-600 text-white border-transparent hover:bg-indigo-700'
+                  } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {submissionStatus === 'success' ? (
+                    <>
+                      <CheckCircle className="h-5 w-5 mr-2" />
+                      Submitted to L&T
+                    </>
+                  ) : submissionStatus === 'error' ? (
+                    <>
+                      <XCircle className="h-5 w-5 mr-2" />
+                      Retry Submission
+                    </>
+                  ) : submissionStatus === 'loading' ? (
+                    <>
+                      <RefreshCw className="animate-spin h-5 w-5 mr-2" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-5 w-5 mr-2" />
+                      Submit to L&T
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>
@@ -369,7 +524,7 @@ const PosterGeneratorPage = () => {
           <div className="w-full md:w-2/3">
             <div className="bg-white p-6 rounded-lg shadow h-full">
               <h2 className="text-xl font-semibold mb-4">Preview</h2>
-              <div className="aspect-[9/16] bg-gray-100 rounded-lg overflow-hidden">
+              <div className="aspect-[9/16] bg-gray-100 rounded-lg overflow-hidden" style={{aspectRatio: '1040/1200'}}>
                 {generatedPoster ? (
                   <img
                     src={generatedPoster}
@@ -378,7 +533,7 @@ const PosterGeneratorPage = () => {
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-gray-400">
-                    {userImage ? 'Click "Generate Poster" to preview' : 'No photo available'}
+                    {processedImage ? 'Click "Generate Poster" to preview' : 'No photo available'}
                   </div>
                 )}
               </div>

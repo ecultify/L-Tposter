@@ -72,11 +72,34 @@ export async function getUser(phone: string): Promise<User | null | DbError> {
   }
 }
 
-export async function saveCompany(company: Company): Promise<number | DbError> {
+export async function saveCompany(
+  companyData: { companyName: string; companyDescription: string; companyLogo?: string },
+  id?: number
+): Promise<number | DbError> {
   try {
     const db = await getDbInstance();
-    const id = await db.put('companies', company);
-    return id;
+    
+    // Create a company object that matches the expected Company type
+    const company: Partial<Company> = {
+      name: companyData.companyName,
+      // These fields are required in the Company type but missing in our input
+      // Provide default values or adjust as needed
+      tagline: '',
+      businessType: '',
+      address: '',
+      phone: '',
+      email: '',
+      logo_url: companyData.companyLogo || null
+    };
+    
+    // If id is provided, include it
+    if (id !== undefined) {
+      company.id = id;
+    }
+    
+    // Add the company to the database
+    const newId = await db.put('companies', company as Company);
+    return newId;
   } catch (error) {
     return {
       message: 'Failed to save company',

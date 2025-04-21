@@ -1,9 +1,29 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, ArrowRight, Layout, Image, Share2 } from 'lucide-react';
+import { useFormData } from '../context/FormDataContext';
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const { userData, setUserData, clearAllData } = useFormData();
+  const [phoneNumber, setPhoneNumber] = useState('');
+
+  // Clear any existing data when landing page loads - only runs once
+  useEffect(() => {
+    clearAllData();
+  }, []); // Empty dependency array ensures it only runs once on mount
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhoneNumber(e.target.value);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (phoneNumber) {
+      setUserData({ ...userData, phoneNumber });
+      navigate('/verify');
+    }
+  };
 
   return (
     <div className="min-h-screen">
@@ -18,20 +38,23 @@ const LandingPage = () => {
               <p className="text-xl mb-8 text-blue-100">
                 Create personalized business posters with L&T Finance - Your trusted financial partner
               </p>
-              <div className="flex items-center space-x-4 bg-white rounded-lg p-2 w-full md:w-96">
+              <form onSubmit={handleSubmit} className="flex items-center space-x-4 bg-white rounded-lg p-2 w-full md:w-96">
                 <Phone className="text-blue-600" />
                 <input
                   type="tel"
                   placeholder="Enter your mobile number"
                   className="flex-1 border-none focus:ring-0 text-gray-800"
+                  value={phoneNumber}
+                  onChange={handlePhoneChange}
+                  required
                 />
                 <button
-                  onClick={() => navigate('/verify')}
+                  type="submit"
                   className="bg-blue-600 text-white px-4 py-2 rounded-md flex items-center"
                 >
                   Start <ArrowRight className="ml-2 h-4 w-4" />
                 </button>
-              </div>
+              </form>
             </div>
             <div className="md:w-1/2 mt-8 md:mt-0">
               <img
